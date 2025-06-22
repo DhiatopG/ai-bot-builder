@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Bot Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/alpinejs" defer></script>
+</head>
+<body class="bg-white text-gray-900 font-sans">
+
+  <header class="bg-[#003366] text-white p-4 shadow">
+    <div class="max-w-7xl mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">AI Bot Dashboard</h1>
+      <a href="/bot.html" class="bg-[#00BFFF] text-white px-4 py-2 rounded hover:bg-blue-500">Create Bot</a>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-6" x-data="dashboard()" x-init="init()">
+    <!-- Quick Launch -->
+    <section class="bg-[#F2F2F2] p-6 rounded-lg shadow-md mb-10">
+      <h2 class="text-lg font-semibold mb-4">Quick Launch</h2>
+      <div>
+        <input type="text" placeholder="Enter Bot Name"
+               class="border border-gray-300 p-3 w-full rounded mb-4"
+               x-model="botName">
+        <button @click="createBot"
+                class="bg-[#00BFFF] text-white px-4 py-2 rounded hover:bg-blue-500 w-full">
+          Launch in 60 Seconds
+        </button>
+      </div>
+    </section>
+
+    <!-- Bot Settings -->
+    <section class="mb-10">
+      <h3 class="text-md font-semibold mb-2">Bot Settings</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <textarea placeholder="Website URLs (each on a new line)"
+                  class="border border-gray-300 p-3 w-full rounded" x-model="botUrl"></textarea>
+        <textarea placeholder="Bot Description"
+                  class="border border-gray-300 p-3 w-full rounded" x-model="botDescription"></textarea>
+        <textarea placeholder="Add Questions (Q1? Q2?...)"
+                  class="border border-gray-300 p-3 w-full rounded" x-model="botQuestions"></textarea>
+        <textarea placeholder="Add Answers (A1, A2, ... in order)"
+                  class="border border-gray-300 p-3 w-full rounded" x-model="botAnswers"></textarea>
+        <button @click="updateBotSettings"
+                class="bg-[#003366] text-white px-4 py-2 rounded hover:bg-blue-700 w-full md:col-span-2">
+          Save Bot Settings
+        </button>
+      </div>
+    </section>
+
+    <!-- Bots -->
+    <section class="mb-10">
+      <h3 class="text-md font-semibold mb-2">Your Bots</h3>
+      <template x-if="bots.length > 0">
+        <ul class="space-y-2">
+          <template x-for="bot in bots" :key="bot.id">
+            <li class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+              <div class="flex justify-between items-center">
+                <div>
+                  <h4 class="font-semibold" x-text="bot.bot_name || bot.name"></h4>
+                  <p class="text-gray-500 text-sm" x-text="bot.created_at"></p>
+                </div>
+                <a :href="'/bot.html?bot=' + bot.id" class="text-blue-600 hover:underline text-sm">Open</a>
+              </div>
+            </li>
+          </template>
+        </ul>
+      </template>
+      <template x-if="bots.length === 0">
+        <p class="text-gray-500">No bots yet.</p>
+      </template>
+    </section>
+
+    <!-- Leads -->
+    <section>
+      <h3 class="text-md font-semibold mb-2">Your Leads</h3>
+      <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+        <p class="text-gray-500">No leads yet. Start by launching your bot.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function dashboard() {
+      return {
+        botName: '',
+        botUrl: '',
+        botDescription: '',
+        botQuestions: '',
+        botAnswers: '',
+        bots: [],
+
+        async createBot() {
+          const userId = localStorage.getItem("user_id") || 'demo-user-123';
+          if (!this.botName.trim()) return alert("Please enter a bot name");
+
+          const res = await fetch('/api/create-bot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId,
+              botName: this.botName,
+              businessInfo: {
+                url: this.botUrl,
+                description: this.botDescription
+              },
+              qaPairs: this.botQuestions
+                .split('?')
+                .map((q, i) => ({
+                  question: q.trim() + '?',
+                  answer: this.botAnswers.split(',')[i]?.trim() || ''
+                }))
+                .filter(q => q.question.length > 1)
+            })
+          });
+
+          const response = await res.json();
+          if (response.success) {
+            this.bots.push(response.data[0]);
+            this.botName = '';
+            this.botUrl = '';
+            this.botDescription = '';
+            this.botQuestions = '';
+            this.botAnswers = '';
+            alert('✅ Bot created!');
+          } else {
+            alert('❌ Failed to create bot.');
+          }
+        },
+
+        async updateBotSettings() {
+          alert("🟡 Settings are already saved when you create the bot.");
+        },
+
+        async loadBots() {
+          const res = await fetch('/api/bots');
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            this.bots = data;
+          } else {
+            console.warn('No bots found or error loading bots.');
+          }
+        },
+
+        init() {
+          this.loadBots();
+        }
+      }
+    }
+  </script>
+
+</body>
+</html>
