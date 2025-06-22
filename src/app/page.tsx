@@ -1,103 +1,53 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <main className="bg-white text-gray-900 px-6 py-12 sm:py-20">
+      <div className="max-w-4xl mx-auto text-center">
+        <h1 className="text-4xl sm:text-5xl font-bold mb-6 leading-tight">
+          Turn Your Website into a <br /> 24/7 Lead-Closing Machine
+        </h1>
+        <p className="text-lg sm:text-xl mb-8">
+          Busy-as-hell business owners. You don’t have time to answer the same damn questions over and over.
+          <br /> Now you don’t have to.
+        </p>
+        <a
+          href="/login"
+          className="inline-block bg-blue-600 hover:bg-blue-700 text-white text-lg font-semibold px-6 py-3 rounded-lg transition"
+        >
+          🚀 Start Free Trial Now
+        </a>
+      </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      <div className="max-w-3xl mx-auto mt-16 grid gap-10 text-left">
+        <Feature title="🤖 AI Assistant for Your Website" description="Answers FAQs in real time — from your site, your files, or your custom Q&A. No coding. No stress. Feels human. Works like magic." />
+        <Feature title="🧠 Custom Knowledge Base" description="Drop your site links, upload PDFs/TXT, write custom answers — your assistant blends it all." />
+        <Feature title="🧪 7-Day Free Trial" description="Full access. No credit card. Just results." />
+        <Feature title="📥 Built-In Lead Collection" description="Assistant asks for name & email naturally inside chat. Auto-saved to your CRM (Airtable, NocoDB...)" />
+        <Feature title="💬 Real-Time Chat Interface" description="Smooth, mobile-friendly, feels alive. Supports buttons & logic." />
+        <Feature title="📊 Conversation & Lead Logs" description="Track every interaction. View or export in your dashboard." />
+        <Feature title="📆 AI-Powered Daily Summaries" description="Know what your users ask — every morning. Straight to your dashboard." />
+        <Feature title="🛠️ Drag & Drop Dashboard" description="Build assistants, upload files, customize Q&A — no tech skills needed." />
+        <Feature title="🏁 Launch It and Let It Work" description="Let your assistant sell, serve, and scale while you sleep." />
+      </div>
+
+      <div className="text-center mt-20 text-sm text-gray-500">
+        <p>Trusted by Professionals Worldwide</p>
+        <p className="mt-2">&copy; 2025 In60second</p>
+        <div className="flex justify-center gap-4 mt-2">
+          <a href="/privacy" className="underline">Privacy Policy</a>
+          <a href="/terms" className="underline">Terms of Service</a>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+    </main>
+  );
+}
+
+function Feature({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h3 className="text-xl font-semibold mb-1">{title}</h3>
+      <p className="text-gray-700">{description}</p>
     </div>
   );
 }
