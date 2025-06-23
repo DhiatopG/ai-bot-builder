@@ -1,53 +1,122 @@
-'use client';
+'use client'
+
+import Image from 'next/image'
+import Link from 'next/link'
 
 export default function HomePage() {
   return (
-    <main className="bg-white text-gray-900 px-6 py-12 sm:py-20">
-      <div className="max-w-4xl mx-auto text-center">
-        <h1 className="text-4xl sm:text-5xl font-bold mb-6 leading-tight">
-          Turn Your Website into a <br /> 24/7 Lead-Closing Machine
+    <div className="relative">
+      {/* Logo Top Left */}
+      <div className="absolute top-6 left-6">
+        <Image src="/logo.png" alt="In60second Logo" width={160} height={50} />
+      </div>
+
+      {/* Hero Section */}
+      <section className="text-center text-[#003366] py-24 px-6 bg-white">
+        <h1 className="text-4xl md:text-5xl font-bold font-poppins leading-tight mb-6">
+          Turn Your Website into a<br />24/7 Lead-Closing Machine
         </h1>
-        <p className="text-lg sm:text-xl mb-8">
-          Busy-as-hell business owners. You don’t have time to answer the same damn questions over and over.
-          <br /> Now you don’t have to.
+        <p className="text-lg font-medium text-gray-700 mb-3">
+          Busy-as-hell business owners.
         </p>
-        <a
+        <p className="text-lg text-gray-600 mb-8">
+          You don’t have time to answer the same damn questions over and over.<br />
+          Now you don’t have to.
+        </p>
+        <Link
           href="/login"
-          className="inline-block bg-blue-600 hover:bg-blue-700 text-white text-lg font-semibold px-6 py-3 rounded-lg transition"
+          className="bg-[#1F51FF] hover:bg-blue-700 text-white font-semibold text-lg py-3 px-6 rounded-lg transition inline-block"
         >
           🚀 Start Free Trial Now
-        </a>
-      </div>
+        </Link>
+      </section>
 
-      <div className="max-w-3xl mx-auto mt-16 grid gap-10 text-left">
-        <Feature title="🤖 AI Assistant for Your Website" description="Answers FAQs in real time — from your site, your files, or your custom Q&A. No coding. No stress. Feels human. Works like magic." />
-        <Feature title="🧠 Custom Knowledge Base" description="Drop your site links, upload PDFs/TXT, write custom answers — your assistant blends it all." />
-        <Feature title="🧪 7-Day Free Trial" description="Full access. No credit card. Just results." />
-        <Feature title="📥 Built-In Lead Collection" description="Assistant asks for name & email naturally inside chat. Auto-saved to your CRM (Airtable, NocoDB...)" />
-        <Feature title="💬 Real-Time Chat Interface" description="Smooth, mobile-friendly, feels alive. Supports buttons & logic." />
-        <Feature title="📊 Conversation & Lead Logs" description="Track every interaction. View or export in your dashboard." />
-        <Feature title="📆 AI-Powered Daily Summaries" description="Know what your users ask — every morning. Straight to your dashboard." />
-        <Feature title="🛠️ Drag & Drop Dashboard" description="Build assistants, upload files, customize Q&A — no tech skills needed." />
-        <Feature title="🏁 Launch It and Let It Work" description="Let your assistant sell, serve, and scale while you sleep." />
-      </div>
-
-      <div className="text-center mt-20 text-sm text-gray-500">
-        <p>Trusted by Professionals Worldwide</p>
-        <p className="mt-2">&copy; 2025 In60second</p>
-        <div className="flex justify-center gap-4 mt-2">
-          <a href="/privacy" className="underline">Privacy Policy</a>
-          <a href="/terms" className="underline">Terms of Service</a>
+      {/* Features Grid */}
+      <section className="bg-gray-100 py-20 px-6">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {[
+            {
+              icon: '🤖',
+              title: 'AI Assistant for Your Website',
+              desc: 'Answers FAQs in real time — from your site, your files, or your custom Q&A. No coding. No stress. Feels human. Works like magic.',
+            },
+            {
+              icon: '🧠',
+              title: 'Custom Knowledge Base',
+              desc: 'Drop your site links, upload PDFs/TXT, write custom answers — your assistant blends it all.',
+            },
+            {
+              icon: '🧪',
+              title: '7-Day Free Trial',
+              desc: 'Full access. No credit card. Just results.',
+            },
+            {
+              icon: '📥',
+              title: 'Built-In Lead Collection',
+              desc: 'Assistant asks for name & email naturally inside chat. Auto-saved to your CRM (Airtable, NocoDB...)',
+            },
+            {
+              icon: '💬',
+              title: 'Real-Time Chat Interface',
+              desc: 'Smooth, mobile-friendly, feels alive. Supports buttons & logic.',
+            },
+            {
+              icon: '📊',
+              title: 'Conversation & Lead Logs',
+              desc: 'Track every interaction. View or export in your dashboard.',
+            },
+            {
+              icon: '📆',
+              title: 'AI-Powered Daily Summaries',
+              desc: 'Know what your users ask — every morning. Straight to your dashboard.',
+            },
+            {
+              icon: '🛠️',
+              title: 'Drag & Drop Dashboard',
+              desc: 'Build assistants, upload files, customize Q&A — no tech skills needed.',
+            },
+            {
+              icon: '🏁',
+              title: 'Launch It and Let It Work',
+              desc: 'Let your assistant sell, serve, and scale while you sleep.',
+            },
+          ].map(({ icon, title, desc }, i) => (
+            <div key={i} className="bg-white p-6 rounded-lg shadow-md">
+              <h3 className="text-xl font-semibold mb-2">{icon} {title}</h3>
+              <p className="text-sm text-gray-700">{desc}</p>
+            </div>
+          ))}
         </div>
-      </div>
-    </main>
-  );
-}
+      </section>
 
-function Feature({ title, description }: { title: string; description: string }) {
-  return (
-    <div>
-      <h3 className="text-xl font-semibold mb-1">{title}</h3>
-      <p className="text-gray-700">{description}</p>
+      {/* Trust Message */}
+      <section className="text-center py-16 bg-white">
+        <h2 className="text-3xl font-semibold text-[#003366] font-poppins">
+          Trusted by Professionals Worldwide
+        </h2>
+      </section>
+
+      {/* CTA Again */}
+      <section className="text-center py-16 bg-white">
+        <h2 className="text-3xl font-semibold text-[#003366] font-poppins mb-6">
+          Launch Your Assistant in In60second
+        </h2>
+        <Link
+          href="/login"
+          className="bg-[#00CFFF] hover:bg-blue-500 text-white font-semibold text-lg py-3 px-6 rounded-lg transition"
+        >
+          Launch Your Assistant Now — Free Trial
+        </Link>
+      </section>
+
+      {/* Footer (only links fixed) */}
+      <footer className="bg-[#003366] text-white text-center py-10">
+        <p>© 2025 In60second</p>
+        <p className="mt-2">
+          <Link href="/privacy" className="underline">Privacy Policy</Link> |{' '}
+          <Link href="/terms" className="underline">Terms of Service</Link>
+        </p>
+      </footer>
     </div>
-  );
+  )
 }
