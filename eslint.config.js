@@ -1,20 +1,20 @@
-import js from "@eslint/js"
-import tsPlugin from "@typescript-eslint/eslint-plugin"
-import tsParser from "@typescript-eslint/parser"
-import reactHooks from "eslint-plugin-react-hooks"
+import js from '@eslint/js'
+import tsPlugin from '@typescript-eslint/eslint-plugin'
+import tsParser from '@typescript-eslint/parser'
+import reactHooks from 'eslint-plugin-react-hooks'
 
 export default [
   {
-    ignores: ["node_modules", ".next", "out"],
+    ignores: ['node_modules', '.next', 'out'],
   },
   js.configs.recommended,
   {
-    files: ["**/*.ts", "**/*.tsx"],
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module",
+        ecmaVersion: 'latest',
+        sourceType: 'module',
       },
       globals: {
         document: true,
@@ -36,22 +36,31 @@ export default [
       },
     },
     plugins: {
-      "@typescript-eslint": tsPlugin,
-      "react-hooks": reactHooks,
+      '@typescript-eslint': tsPlugin,
+      'react-hooks': reactHooks,
     },
     rules: {
-      "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
-      "@typescript-eslint/no-unused-vars": "error",
-      "no-undef": "off"
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      '@typescript-eslint/no-unused-vars': 'error',
+      'no-undef': 'off',
     },
   },
   {
-    files: ["public/*.js"],
+    files: ['public/*.js'],
     languageOptions: {
       globals: {
         document: true,
         window: true,
+      },
+    },
+  },
+  {
+    files: ['tailwind.config.js'],
+    languageOptions: {
+      globals: {
+        module: 'writable',
+        require: 'writable',
       },
     },
   },

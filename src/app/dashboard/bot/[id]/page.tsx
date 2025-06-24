@@ -12,6 +12,7 @@ export default function BotDetailPage() {
   const [botName, setBotName] = useState('')
   const [description, setDescription] = useState('')
   const [urls, setUrls] = useState('')
+  const [calendarUrl, setCalendarUrl] = useState('')
 
   useEffect(() => {
     const fetchBot = async () => {
@@ -22,6 +23,7 @@ export default function BotDetailPage() {
       setBotName(data.bot_name || '')
       setDescription(data.description || '')
       setUrls(data.urls || '')
+      setCalendarUrl(data.calendar_url || '')
     }
     if (params.id) fetchBot()
   }, [params.id])
@@ -29,7 +31,7 @@ export default function BotDetailPage() {
   const handleUpdate = async () => {
     await fetch(`/api/bots/${params.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ bot_name: botName, description, urls }),
+      body: JSON.stringify({ bot_name: botName, description, urls, calendar_url: calendarUrl }),
       headers: { 'Content-Type': 'application/json' }
     })
     router.back()
@@ -59,6 +61,12 @@ export default function BotDetailPage() {
         value={urls}
         onChange={(e) => setUrls(e.target.value)}
         placeholder="Website URLs (separated by newline)"
+      />
+      <input
+        className="w-full border border-gray-600 bg-black text-white p-2 mb-4"
+        value={calendarUrl}
+        onChange={(e) => setCalendarUrl(e.target.value)}
+        placeholder="Calendar Booking URL (e.g. https://calendly.com/your-link)"
       />
 
       <button

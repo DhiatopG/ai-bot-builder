@@ -1,3 +1,4 @@
+/* global console */
 (function () {
   const userId = document.currentScript.getAttribute("data-user") || "demo-user";
 
@@ -20,6 +21,11 @@
   iframe.width = "100%";
   iframe.height = "100%";
   iframe.style.border = "0";
+
+  iframe.onerror = function () {
+    console.error("Bot iframe failed to load.");
+    container.remove();
+  };
 
   container.appendChild(iframe);
   document.body.appendChild(container);

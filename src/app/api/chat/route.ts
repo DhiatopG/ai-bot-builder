@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { OpenAI } from 'openai'
 import { createClient } from '@supabase/supabase-js'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/authOptions'
+import { ratelimit } from '@/lib/rateLimiter'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -12,6 +15,17 @@ const supabase = createClient(
 )
 
 export async function POST(req: Request) {
+  const ip = req.headers.get('x-forwarded-for') || 'anonymous'
+  const { success } = await ratelimit.limit(ip)
+  if (!success) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const body = await req.json()
   const { question, user_id } = body
 
@@ -19,6 +33,7 @@ export async function POST(req: Request) {
     .from('bots')
     .select('id, description, scraped_content')
     .eq('id', user_id)
+    .eq('user_email', session.user.email)
     .single()
 
   if (error || !bot) {

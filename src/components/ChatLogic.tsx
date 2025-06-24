@@ -10,13 +10,14 @@ interface ChatLogicProps {
 }
 
 export default function ChatLogic({ botId }: ChatLogicProps) {
-  const [messages, setMessages] = useState<{ sender: string; text: string; buttons?: string[] }[]>([])
+  const [messages, setMessages] = useState<{ sender: string; text: string; buttons?: string[]; iframe?: string; link?: string }[]>([])
   const [input, setInput] = useState('')
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [visible, setVisible] = useState(true)
   const [logoUrl, setLogoUrl] = useState('')
+  const [calendarUrl, setCalendarUrl] = useState('')
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const scrollToBottom = () => {
@@ -32,11 +33,12 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
   }, [messages])
 
   useEffect(() => {
-    const fetchLogo = async () => {
-      const { data } = await supabase.from('bots').select('logo_url').eq('id', botId).single()
+    const fetchData = async () => {
+      const { data } = await supabase.from('bots').select('logo_url, calendar_url').eq('id', botId).single()
       setLogoUrl(data?.logo_url || '')
+      setCalendarUrl(data?.calendar_url || '')
     }
-    fetchLogo()
+    fetchData()
   }, [botId])
 
   const sendMessage = async (optionalInput?: string) => {
@@ -88,6 +90,16 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       })
 
       setStep(99)
+      return
+    }
+
+    if (userMessage.toLowerCase().includes('book') && calendarUrl) {
+      const isIframe = calendarUrl.includes('calendly.com') || calendarUrl.includes('tidio') || calendarUrl.includes('hubspot')
+      if (isIframe) {
+        setMessages((prev) => [...prev, { sender: 'bot', text: 'You can book here:', iframe: calendarUrl }])
+      } else {
+        setMessages((prev) => [...prev, { sender: 'bot', text: 'You can book using this link:', link: calendarUrl }])
+      }
       return
     }
 
@@ -149,9 +161,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            className={`flex gap-2 items-start ${
-              msg.sender === 'bot' ? 'self-start' : 'self-end'
-            }`}
+            className={`flex gap-2 items-start ${msg.sender === 'bot' ? 'self-start' : 'self-end'}`}
           >
             {msg.sender === 'bot' && logoUrl && (
               <img
@@ -162,12 +172,28 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
             )}
             <div
               className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap max-w-[75%] ${
-                msg.sender === 'bot'
-                  ? 'bg-gray-100 text-black'
-                  : 'bg-green-600 text-white'
+                msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-green-600 text-white'
               }`}
             >
               <div>{msg.text}</div>
+              {msg.iframe && (
+                <iframe
+                  src={msg.iframe}
+                  width="100%"
+                  height="300"
+                  style={{ border: 'none', marginTop: '10px', borderRadius: '8px' }}
+                />
+              )}
+              {msg.link && (
+                <a
+                  href={msg.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 underline block mt-2"
+                >
+                  Open Booking Page
+                </a>
+              )}
               {msg.buttons && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {msg.buttons.map((btn, i) => (

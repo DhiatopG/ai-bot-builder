@@ -27,7 +27,7 @@ export async function GET() {
 
   const { data } = await supabase
     .from('bots')
-    .select('*')
+    .select('id, created_at, user_id, urls, description, custom_qa, nocodb_api_url, nocodb_api_key, nocodb_table, bot_name, scraped_content, qa, logo_url, calendar_url')
     .order('created_at', { ascending: false })
 
   return NextResponse.json(data)
