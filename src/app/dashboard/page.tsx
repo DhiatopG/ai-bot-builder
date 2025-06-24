@@ -1,13 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-
 import { useSession, signOut } from 'next-auth/react'
-
 import { useRouter } from 'next/navigation'
-
 import { supabase } from '@/lib/supabase'
-
 import { v4 as uuidv4 } from 'uuid'
 
 interface Bot {
@@ -19,6 +15,7 @@ interface Bot {
   nocodb_api_key?: string | null
   nocodb_table?: string | null
   calendar_url?: string | null
+  document_url?: string | null
 }
 
 export default function DashboardPage() {
@@ -267,6 +264,14 @@ export default function DashboardPage() {
                         setBots(bots.map(b => b.id === bot.id ? { ...b, calendar_url: e.target.value } : b))
                       }
                     />
+                    <input
+                      className="p-2 text-sm border border-[#CCCCCC] rounded"
+                      placeholder="Document Upload URL (optional)"
+                      value={bot.document_url ?? ''}
+                      onChange={(e) =>
+                        setBots(bots.map(b => b.id === bot.id ? { ...b, document_url: e.target.value } : b))
+                      }
+                    />
                   </div>  
                   <button  
                     className="bg-[#003366] text-white px-3 py-2 rounded hover:bg-[#002244] text-xs mt-2"  
@@ -274,7 +279,8 @@ export default function DashboardPage() {
                       await updateBot(bot.id, 'nocodb_api_url', bot.nocodb_api_url || '')  
                       await updateBot(bot.id, 'nocodb_api_key', bot.nocodb_api_key || '')  
                       await updateBot(bot.id, 'nocodb_table', bot.nocodb_table || '')  
-                      await updateBot(bot.id, 'calendar_url', bot.calendar_url || '')  
+                      await updateBot(bot.id, 'calendar_url', bot.calendar_url || '')
+                      await updateBot(bot.id, 'document_url', bot.document_url || '')  
                     }}  
                   >  
                     Save  
