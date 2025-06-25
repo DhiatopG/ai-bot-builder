@@ -9,23 +9,22 @@ const supabase = createClient(
 export async function POST(req: Request) {
   const { email, password } = await req.json()
 
-  const { data, error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.admin.createUser({
     email,
     password,
+    email_confirm: true,
   })
 
-  if (error) {
-    return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error || !data?.user) {
+    return NextResponse.json({ success: false, message: error?.message || 'Signup failed' }, { status: 400 })
   }
 
-  if (data?.user) {
-    await supabase.from('users').insert({
-      auth_id: data.user.id,
-      email: data.user.email,
-      name: '',
-      role: 'user',
-    })
-  }
+  await supabase.from('users').insert({
+    auth_id: data.user.id,
+    email: data.user.email,
+    name: '',
+    role: 'user',
+  })
 
   return NextResponse.json({ success: true, user: data.user })
 }
