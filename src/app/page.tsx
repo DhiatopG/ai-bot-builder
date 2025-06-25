@@ -6,13 +6,15 @@ import Link from 'next/link';
 export default function HomePage() {
   return (
     <div className="relative">
-      <div className="absolute top-6 left-6">
+      {/* Logo Top Left */}
+      <div className="absolute top-4 left-4 sm:top-6 sm:left-6 z-50">
         <Image
           src="/logo.png"
           alt="In60second Logo"
-          width={160}
-          height={50}
-          style={{ width: 'auto', height: 'auto', maxWidth: '120px' }}
+          width={180}
+          height={60}
+          className="h-10 sm:h-12 w-auto object-contain"
+          priority
         />
       </div>
 
