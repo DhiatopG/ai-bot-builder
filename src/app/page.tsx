@@ -6,12 +6,10 @@ import Link from 'next/link'
 export default function HomePage() {
   return (
     <div className="relative">
-      {/* Logo Top Left */}
       <div className="absolute top-6 left-6">
         <Image src="/logo.png" alt="In60second Logo" width={160} height={50} />
       </div>
 
-      {/* Hero Section */}
       <section className="text-center text-[#003366] py-24 px-6 bg-white">
         <h1 className="text-4xl md:text-5xl font-bold font-poppins leading-tight mb-6">
           Turn Your Website into a<br />24/7 Lead-Closing Machine
@@ -31,7 +29,6 @@ export default function HomePage() {
         </Link>
       </section>
 
-      {/* Features Grid */}
       <section className="bg-gray-100 py-20 px-6">
         <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {[
@@ -89,14 +86,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Trust Message */}
       <section className="text-center py-16 bg-white">
         <h2 className="text-3xl font-semibold text-[#003366] font-poppins">
           Trusted by Professionals Worldwide
         </h2>
       </section>
 
-      {/* CTA Again */}
       <section className="text-center py-16 bg-white">
         <h2 className="text-3xl font-semibold text-[#003366] font-poppins mb-6">
           Launch Your Assistant in In60second
@@ -109,10 +104,11 @@ export default function HomePage() {
         </Link>
       </section>
 
-      {/* Footer (only links fixed) */}
       <footer className="bg-[#003366] text-white text-center py-10">
         <p>© 2025 In60second</p>
         <p className="mt-2">
+          <Link href="/about" className="underline">About</Link> |{' '}
+          <Link href="/contact" className="underline">Contact</Link> |{' '}
           <Link href="/privacy" className="underline">Privacy Policy</Link> |{' '}
           <Link href="/terms" className="underline">Terms of Service</Link>
         </p>
