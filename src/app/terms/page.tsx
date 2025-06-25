@@ -8,7 +8,13 @@ export default function TermsPage() {
     <div className="relative">
       {/* Logo Top Left */}
       <div className="absolute top-6 left-6">
-        <Image src="/logo.png" alt="In60second Logo" width={160} height={50} />
+        <Image
+          src="/logo.png"
+          alt="In60second Logo"
+          width={160}
+          height={50}
+          style={{ width: 'auto', height: 'auto', maxWidth: '120px' }}
+        />
       </div>
 
       {/* Main Content */}

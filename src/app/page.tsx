@@ -1,13 +1,19 @@
-'use client'
+'use client';
 
-import Image from 'next/image'
-import Link from 'next/link'
+import Image from 'next/image';
+import Link from 'next/link';
 
 export default function HomePage() {
   return (
     <div className="relative">
       <div className="absolute top-6 left-6">
-        <Image src="/logo.png" alt="In60second Logo" width={160} height={50} />
+        <Image
+          src="/logo.png"
+          alt="In60second Logo"
+          width={160}
+          height={50}
+          style={{ width: 'auto', height: 'auto', maxWidth: '120px' }}
+        />
       </div>
 
       <section className="text-center text-[#003366] py-24 px-6 bg-white">
@@ -114,5 +120,5 @@ export default function HomePage() {
         </p>
       </footer>
     </div>
-  )
+  );
 }

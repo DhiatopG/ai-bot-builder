@@ -122,6 +122,13 @@ export default function LoginForm() {
       >
         Continue with GitHub
       </button>
+
+      <button
+        onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+        className="w-full bg-white border border-gray-300 text-black py-2 rounded-md hover:bg-gray-100 mt-2"
+      >
+        Continue with Google
+      </button>
     </div>
   );
 }

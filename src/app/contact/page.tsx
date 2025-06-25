@@ -29,7 +29,13 @@ export default function ContactPage() {
     <div className="relative">
       {/* Logo */}
       <div className="absolute top-6 left-6">
-        <Image src="/logo.png" alt="In60second Logo" width={160} height={50} />
+        <Image
+          src="/logo.png"
+          alt="In60second Logo"
+          width={160}
+          height={50}
+          style={{ width: 'auto', height: 'auto', maxWidth: '120px' }}
+        />
       </div>
 
       <section className="text-center text-[#003366] py-24 px-6 bg-white">
