@@ -21,11 +21,7 @@ async function scrapeWebsiteContent(url: string): Promise<string> {
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const { botName, businessInfo, qaPairs } = body
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { userId, botName, businessInfo, qaPairs } = body
 
   const urls = businessInfo.urls || []
   let scrapedText = ''
@@ -36,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   const botData = {
-    user_id: user?.id,
+    user_id: userId,
     bot_name: botName,
     description: businessInfo.description,
     urls: urls.join('\n'),
