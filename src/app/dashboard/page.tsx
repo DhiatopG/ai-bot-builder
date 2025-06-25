@@ -44,6 +44,10 @@ export default function DashboardPage() {
     }
   }, [status, session, router])
 
+  useEffect(() => {
+    fetch('/api/oauth-user', { method: 'POST' })
+  }, [])
+
   const loadBots = async (email: string) => {
     const { data } = await supabase.from('bots').select('*').eq('user_id', email)
     setBots(data || [])
