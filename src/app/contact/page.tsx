@@ -77,7 +77,7 @@ export default function ContactPage() {
             </button>
           </form>
         ) : (
-          <p className="text-green-600 font-medium">✅ Your message has been sent!</p>
+          <p className="text-green-600 font-medium">✅ Your messagee has been sent!</p>
         )}
       </section>
 
