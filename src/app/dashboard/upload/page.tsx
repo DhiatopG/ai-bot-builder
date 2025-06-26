@@ -1,21 +1,35 @@
 'use client'
 
-import { useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 export default function UploadPage() {
-  const { data: session } = useSession()
   const router = useRouter()
   const [uploading, setUploading] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user?.email) {
+        router.replace('/login')
+      } else {
+        setUserEmail(user.email)
+      }
+    }
+
+    fetchUser()
+  }, [router])
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !session?.user?.email) return
+    if (!file || !userEmail) return
 
     setUploading(true)
-    const filePath = `${session.user.email}/${file.name}`
+    const filePath = `${userEmail}/${file.name}`
 
     const { error: uploadError } = await supabase.storage.from('pdfs').upload(filePath, file)
 
@@ -25,14 +39,18 @@ export default function UploadPage() {
       return
     }
 
-    // 🔁 Call your API route to extract content and save it
-    const botRes = await supabase.from('bots').select('id').eq('user_id', session.user.email).limit(1).single()
+    const botRes = await supabase
+      .from('bots')
+      .select('id')
+      .eq('user_id', userEmail)
+      .limit(1)
+      .single()
     const bot_id = botRes.data?.id
 
     const res = await fetch('/api/upload-file-knowledge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot_id, filename: file.name })
+      body: JSON.stringify({ bot_id, filename: file.name }),
     })
 
     const response = await res.json()

@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createBrowserClient } from '@supabase/ssr';
 import { X } from 'lucide-react';
 
 interface Conversation {
@@ -12,12 +11,19 @@ interface Conversation {
 }
 
 export default function DailySummaryPage() {
-  const { data: session, status } = useSession();
   const router = useRouter();
   const [summary, setSummary] = useState<{ question: string; count: number }[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
   const loadSummaryForDate = useCallback(async (date: string) => {
+    if (!userEmail) return;
+
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);
     const end = new Date(date);
@@ -26,7 +32,7 @@ export default function DailySummaryPage() {
     const { data, error } = await supabase
       .from('conversations')
       .select('question, created_at')
-      .eq('user_id', session?.user?.email || '')
+      .eq('user_id', userEmail)
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString());
 
@@ -43,16 +49,24 @@ export default function DailySummaryPage() {
       .sort((a, b) => b.count - a.count);
 
     setSummary(sorted);
-  }, [session]);
+  }, [userEmail, supabase]);
 
   useEffect(() => {
-    if (status === 'loading') return;
-    if (!session?.user?.email) {
-      router.replace('/login');
-      return;
-    }
-    loadSummaryForDate(selectedDate);
-  }, [status, session, selectedDate, loadSummaryForDate, router]);
+    const fetchSession = async () => {
+      const { data } = await supabase.auth.getUser();
+      const email = data.user?.email;
+
+      if (!email) {
+        router.replace('/login');
+        return;
+      }
+
+      setUserEmail(email);
+      loadSummaryForDate(selectedDate);
+    };
+
+    fetchSession();
+  }, [selectedDate, loadSummaryForDate, router, supabase.auth]);
 
   const downloadSummary = () => {
     if (summary.length === 0) return;

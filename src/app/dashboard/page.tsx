@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
@@ -19,7 +18,6 @@ interface Bot {
 }
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession()
   const router = useRouter()
   const [userId, setUserId] = useState('')
   const [bots, setBots] = useState<Bot[]>([])
@@ -32,17 +30,21 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.replace('/login')
-      return
+    const fetchSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        router.replace('/login')
+      } else {
+        const email = data.session.user.email
+        // Added email check here
+        if (email) {
+          setUserId(email)
+          loadBots(email)
+        }
+      }
     }
-
-    if (status === 'authenticated' && session?.user?.email) {
-      const email = session.user.email
-      setUserId(email)
-      loadBots(email)
-    }
-  }, [status, session, router])
+    fetchSession()
+  }, [router]) // Added router to dependency array
 
   useEffect(() => {
     fetch('/api/oauth-user', { method: 'POST' })
@@ -129,14 +131,9 @@ export default function DashboardPage() {
     }
   }
 
-  const handleLogout = () => signOut()
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-[#333333]">
-        <p>Checking access...</p>
-      </div>
-    )
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.replace('/login')
   }
 
   return (

@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 interface Lead {
   id: string;
@@ -13,23 +13,34 @@ interface Lead {
 }
 
 export default function LeadsPage() {
-  const { data: session, status } = useSession();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<any>(null);
   const router = useRouter();
 
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.email) {
-      fetch(`/api/get-leads?user_id=${session.user.email}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setLeads(data.leads || []);
-          setLoading(false);
-        });
-    }
-  }, [status, session]);
+    const fetchSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        router.replace('/login');
+        return;
+      }
 
-  if (status === 'loading') return <p className="p-4">Loading session...</p>;
+      setSession(data.session);
+      const userEmail = data.session.user.email;
+      if (userEmail) {
+        fetch(`/api/get-leads?user_id=${userEmail}`)
+          .then((res) => res.json())
+          .then((data) => {
+            setLeads(data.leads || []);
+            setLoading(false);
+          });
+      }
+    };
+
+    fetchSession();
+  }, [router]);
+
   if (!session) return <p className="p-4 text-red-500">Access denied. Please log in.</p>;
 
   return (

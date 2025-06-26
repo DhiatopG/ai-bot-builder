@@ -1,10 +1,15 @@
-'use client';
+'use client'
 
-import { signOut } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function DashboardHeader() {
-  const router = useRouter();
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   return (
     <header className="bg-[#003366] text-white p-4 shadow">
@@ -18,7 +23,7 @@ export default function DashboardHeader() {
             View Leads
           </button>
           <button
-            onClick={() => signOut()}
+            onClick={handleLogout}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
           >
             Logout
@@ -26,5 +31,5 @@ export default function DashboardHeader() {
         </div>
       </div>
     </header>
-  );
+  )
 }

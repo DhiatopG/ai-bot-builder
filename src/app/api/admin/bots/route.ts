@@ -1,7 +1,6 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/authOptions'
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { getSupabaseUser } from '@/lib/getSupabaseUser'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,19 +8,19 @@ const supabase = createClient(
 )
 
 export async function GET() {
-  const session = await getServerSession(authOptions)
+  const user = await getSupabaseUser()
 
-  if (!session?.user?.email) {
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { data: user } = await supabase
+  const { data: dbUser } = await supabase
     .from('users')
     .select('role')
-    .eq('email', session.user.email)
+    .eq('email', user.email)
     .single()
 
-  if (user?.role !== 'admin') {
+  if (dbUser?.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

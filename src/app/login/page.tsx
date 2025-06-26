@@ -3,37 +3,46 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
-import { signIn } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [mode, setMode] = useState<'signup' | 'login'>('login')
+  const router = useRouter()
 
   const handleAuth = async () => {
-    if (mode === 'signup') {
-      const res = await fetch('/api/signup', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const result = await res.json()
-      if (!result.success) {
-        setError(result.message)
-        return
-      }
+    if (!email || !password) {
+      setError('Email and password required')
+      return
     }
 
-    const result = await signIn('credentials', {
-      email,
-      password,
-      callbackUrl: '/dashboard',
-      redirect: true,
-    })
+    let result
+    if (mode === 'signup') {
+      result = await supabase.auth.signUp({ email, password })
+    } else {
+      result = await supabase.auth.signInWithPassword({ email, password })
+    }
 
-    if (!result || result.error) {
-      setError('Login failed')
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+
+    router.replace('/dashboard')
+  }
+
+  const handleGitHubLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo: 'https://in60second.net/dashboard',
+      },
+    })
+    if (error) {
+      setError(error.message)
     }
   }
 
@@ -70,13 +79,13 @@ export default function LoginPage() {
           </button>
           <div className="flex flex-col gap-2 mb-4">
             <button
-              onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
+              onClick={handleGitHubLogin}
               className="w-full bg-black text-white py-2 rounded"
             >
               Continue with GitHub
             </button>
             <button
-              onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+              onClick={() => alert('🔒 Google login not yet connected to Supabase')}
               className="w-full bg-red-600 text-white py-2 rounded"
             >
               Continue with Google

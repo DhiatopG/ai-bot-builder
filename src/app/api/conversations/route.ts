@@ -1,39 +1,44 @@
-import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
 export async function GET() {
+  const cookieStore = cookies()
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies }
+    {
+      cookies: cookieStore,
+    }
   )
 
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser()
 
-  if (!user?.email) {
+  if (userError || !user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { data: userRecord } = await supabase
+  const { data: dbUser, error: roleError } = await supabase
     .from('users')
     .select('role')
     .eq('email', user.email)
     .single()
 
-  if (userRecord?.role !== 'admin') {
+  if (roleError || dbUser?.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data, error } = await supabase
-    .from('bots')
-    .select('id, created_at, user_id, urls, description, custom_qa, nocodb_api_url, nocodb_api_key, nocodb_table, bot_name, scraped_content, qa, logo_url, calendar_url')
+  const { data, error: fetchError } = await supabase
+    .from('conversations')
+    .select('*')
     .order('created_at', { ascending: false })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  if (fetchError) {
+    return NextResponse.json({ error: fetchError.message }, { status: 500 })
   }
 
   return NextResponse.json(data)

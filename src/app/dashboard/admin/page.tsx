@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { supabase } from '@/lib/supabase'
 import DeleteBotButton from './DeleteBotButton'
 import EditBotButton from './EditBotButton'
 import OpenAsUserButton from './OpenAsUserButton'
@@ -39,53 +39,62 @@ type Bot = {
 }
 
 export default function AdminDashboard() {
-  const { data: session, status } = useSession()
   const [isAdmin, setIsAdmin] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [bots, setBots] = useState<Bot[]>([])
+  const [loading, setLoading] = useState(true)
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null)
 
   useEffect(() => {
-    if (session?.user?.email) {
-      fetch('/api/admin/users')
-        .then((res) => {
-          if (res.status === 403) {
-            setIsAdmin(false)
-            return []
-          }
-          setIsAdmin(true)
-          return res.json()
-        })
-        .then((data) => {
-          if (Array.isArray(data)) setUsers(data)
-        })
+    const fetchSessionAndData = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-      fetch('/api/admin/conversations')
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) setConversations(data)
-        })
+      if (!user?.email) {
+        setIsAdmin(false)
+        setLoading(false)
+        return
+      }
 
-      fetch('/api/admin/bots')
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) setBots(data)
-        })
+      setCurrentEmail(user.email)
+
+      const res = await fetch('/api/admin/users')
+      if (res.status === 403) {
+        setIsAdmin(false)
+        setLoading(false)
+        return
+      }
+
+      setIsAdmin(true)
+      const userData = await res.json()
+      if (Array.isArray(userData)) setUsers(userData)
+
+      const convoRes = await fetch('/api/admin/conversations')
+      const convoData = await convoRes.json()
+      if (Array.isArray(convoData)) setConversations(convoData)
+
+      const botsRes = await fetch('/api/admin/bots')
+      const botsData = await botsRes.json()
+      if (Array.isArray(botsData)) setBots(botsData)
+
+      setLoading(false)
     }
-  }, [session])
 
-  if (status === 'loading') return <p className="p-6">Loading...</p>
+    fetchSessionAndData()
+  }, [])
+
+  if (loading) return <p className="p-6">Loading...</p>
   if (!isAdmin) return <p className="p-6 text-red-500">Access Denied</p>
 
   async function updateRole(email: string, role: string) {
     await fetch('/api/admin/users', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, role }),
     })
-    const updated = await fetch('/api/admin/users').then(res => res.json())
+    const updated = await fetch('/api/admin/users').then((res) => res.json())
     if (Array.isArray(updated)) {
       setUsers(updated)
     }
@@ -101,7 +110,7 @@ export default function AdminDashboard() {
               <p>Email: {u.email}</p>
               <p>Name: {u.name}</p>
               <p>Role: {u.role}</p>
-              {session?.user?.email !== u.email && (
+              {currentEmail !== u.email && (
                 <button
                   onClick={() => updateRole(u.email, u.role === 'admin' ? 'user' : 'admin')}
                   className="mt-2 mr-2 px-3 py-1 rounded bg-blue-600 text-white"

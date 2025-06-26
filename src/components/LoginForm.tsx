@@ -1,53 +1,63 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function LoginForm() {
-  const router = useRouter();
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
+  const [isLogin, setIsLogin] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async () => {
-    setError('');
-    setLoading(true);
+    setError('')
+    setLoading(true)
 
-    if (!isLogin) {
-      const res = await fetch('/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
-      });
+    if (!email || !password) {
+      setError('Email and password are required')
+      setLoading(false)
+      return
+    }
 
-      const result = await res.json();
+    if (isLogin) {
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
 
-      if (!result.success) {
-        setError(result.message || 'Signup failed');
-        setLoading(false);
-        return;
+      if (loginError) {
+        setError('Invalid email or password')
+        setLoading(false)
+        return
+      }
+    } else {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name } }
+      })
+
+      if (signUpError) {
+        setError(signUpError.message)
+        setLoading(false)
+        return
       }
     }
 
-    const loginRes = await signIn('credentials', {
-      redirect: false,
-      email,
-      password,
-      callbackUrl: '/dashboard',
-    });
+    router.push('/dashboard')
+    setLoading(false)
+  }
 
-    if (loginRes?.error) {
-      setError('Invalid email or password');
-    } else {
-      router.push('/dashboard');
-    }
-
-    setLoading(false);
-  };
+  const handleOAuthLogin = async (provider: 'google') => {
+    await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${location.origin}/dashboard` }
+    })
+  }
 
   return (
     <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md space-y-6">
@@ -117,18 +127,11 @@ export default function LoginForm() {
       <div className="text-center text-sm text-gray-400">— or —</div>
 
       <button
-        onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
-        className="w-full bg-black text-white py-2 rounded-md hover:bg-gray-900"
-      >
-        Continue with GitHub
-      </button>
-
-      <button
-        onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+        onClick={() => handleOAuthLogin('google')}
         className="w-full bg-white border border-gray-300 text-black py-2 rounded-md hover:bg-gray-100 mt-2"
       >
         Continue with Google
       </button>
     </div>
-  );
+  )
 }

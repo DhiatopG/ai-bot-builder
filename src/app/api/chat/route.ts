@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server'
 import { OpenAI } from 'openai'
-import { createClient } from '@supabase/supabase-js'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/authOptions'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { ratelimit } from '@/lib/rateLimiter'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for') || 'anonymous'
@@ -21,8 +15,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
 
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.email) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies }
+  )
+
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -33,7 +36,7 @@ export async function POST(req: Request) {
     .from('bots')
     .select('id, description, scraped_content')
     .eq('id', user_id)
-    .eq('user_email', session.user.email)
+    .eq('user_email', user.email)
     .single()
 
   if (error || !bot) {

@@ -1,39 +1,51 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 interface Conversation {
-  id: string;
-  question: string;
-  answer: string;
-  created_at: string;
+  id: string
+  question: string
+  answer: string
+  created_at: string
 }
 
 export default function ConversationsPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const router = useRouter()
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (status === 'loading') return;
-    if (!session?.user?.email) {
-      router.replace('/login');
-      return;
+    const fetchConversations = async () => {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
+
+      if (error || !user) {
+        router.replace('/login')
+        return
+      }
+
+      const { data, error: fetchError } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('user_email', user.email) // optional: filter per user
+        .order('created_at', { ascending: false })
+
+      if (!fetchError && data) {
+        setConversations(data)
+      }
+
+      setLoading(false)
     }
 
-    fetch(`/api/conversations?user_id=${session.user.email}`)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setConversations(data);
-        }
-      });
-  }, [status, session, router]);
+    fetchConversations()
+  }, [router])
 
-  if (status === 'loading') {
-    return <p className="p-6">Loading session...</p>;
+  if (loading) {
+    return <p className="p-6">Loading conversations...</p>
   }
 
   return (
@@ -60,5 +72,5 @@ export default function ConversationsPage() {
         </ul>
       )}
     </div>
-  );
+  )
 }
