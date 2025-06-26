@@ -1,16 +1,32 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { cookies as nextCookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
-export async function GET() {
-  const supabase = createServerClient(
+async function createSupabase() {
+  const cookieStore = await nextCookies()
+
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies }
+    {
+      cookies: {
+        get: (key) => cookieStore.get(key)?.value || '',
+        set: async (key, value, options) => {
+          await cookieStore.set({ name: key, value, ...options })
+        },
+        remove: async (key, options) => {
+          await cookieStore.delete({ name: key, ...options })
+        }
+      }
+    }
   )
+}
+
+export async function GET() {
+  const supabase = await createSupabase()
 
   const {
-    data: { user },
+    data: { user }
   } = await supabase.auth.getUser()
 
   if (!user?.email) {
@@ -32,14 +48,10 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies }
-  )
+  const supabase = await createSupabase()
 
   const {
-    data: { user },
+    data: { user }
   } = await supabase.auth.getUser()
 
   if (!user?.email) {

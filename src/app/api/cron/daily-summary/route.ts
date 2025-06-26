@@ -1,11 +1,21 @@
+import 'dotenv/config'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
-export async function GET() {
+export async function GET(req: Request) {
+  // ✅ Authorization check
+  const authHeader = req.headers.get('Authorization')
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const { data: bots, error: botError } = await supabase.from('bots').select('id')
   if (botError) return NextResponse.json({ error: botError.message }, { status: 500 })
 

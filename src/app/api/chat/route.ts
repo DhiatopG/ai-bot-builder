@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { OpenAI } from 'openai'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { cookies as nextCookies } from 'next/headers'
 import { ratelimit } from '@/lib/rateLimiter'
 
 const openai = new OpenAI({
@@ -15,10 +15,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
 
+  const cookieStore = await nextCookies()
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies }
+    {
+      cookies: {
+        get: (key) => cookieStore.get(key)?.value || '',
+        set: async (key, value, options) => {
+          await cookieStore.set({ name: key, value, ...options })
+        },
+        remove: async (key, options) => {
+          await cookieStore.delete({ name: key, ...options })
+        }
+      }
+    }
   )
 
   const {
