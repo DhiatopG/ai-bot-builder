@@ -46,6 +46,18 @@ export default function LoginPage() {
     }
   }
 
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'https://in60second.net/dashboard',
+      },
+    })
+    if (error) {
+      setError(error.message)
+    }
+  }
+
   return (
     <div className="relative min-h-screen bg-white">
       <div className="absolute top-6 left-6">
@@ -85,7 +97,7 @@ export default function LoginPage() {
               Continue with GitHub
             </button>
             <button
-              onClick={() => alert('🔒 Google login not yet connected to Supabase')}
+              onClick={handleGoogleLogin}
               className="w-full bg-red-600 text-white py-2 rounded"
             >
               Continue with Google
