@@ -50,7 +50,8 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'https://in60second.net/dashboard',
+        redirectTo: 'https://keskdcvabkujyaluvcly.supabase.co/auth/v1/callback',
+
       },
     })
     if (error) {
