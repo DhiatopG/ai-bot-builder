@@ -37,26 +37,15 @@ export default function LoginPage() {
   const handleGitHubLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
-      options: {
-        redirectTo: 'https://in60second.net/dashboard',
-      },
     })
-    if (error) {
-      setError(error.message)
-    }
+    if (error) setError(error.message)
   }
 
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: 'https://keskdcvabkujyaluvcly.supabase.co/auth/v1/callback',
-
-      },
     })
-    if (error) {
-      setError(error.message)
-    }
+    if (error) setError(error.message)
   }
 
   return (
