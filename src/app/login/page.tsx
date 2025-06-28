@@ -34,6 +34,30 @@ export default function LoginPage() {
     router.replace('/dashboard')
   }
 
+  const insertUserIfNotExists = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (user) {
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', user.email)
+        .maybeSingle()
+
+      if (!existing) {
+        await supabase.from('users').insert({
+          email: user.email,
+          name: user.user_metadata.full_name || user.user_metadata.name,
+          uuid: user.id,
+          auth_id: user.id,
+          role: 'user',
+        })
+      }
+    }
+  }
+
   const handleGitHubLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
@@ -44,6 +68,8 @@ export default function LoginPage() {
             : 'https://in60second.net/dashboard',
       },
     })
+
+    if (!error) await insertUserIfNotExists()
     if (error) setError(error.message)
   }
 
@@ -57,6 +83,8 @@ export default function LoginPage() {
             : 'https://in60second.net/dashboard',
       },
     })
+
+    if (!error) await insertUserIfNotExists()
     if (error) setError(error.message)
   }
 
