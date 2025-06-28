@@ -12,30 +12,30 @@ export async function POST() {
       cookies: {
         get: (key) => cookieStore.get(key)?.value || '',
         set: async () => {},
-        remove: async () => {},
-      },
+        remove: async () => {}
+      }
     }
   )
 
   const {
     data: { user },
-    error,
+    error
   } = await supabase.auth.getUser()
 
   if (error || !user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { data: existing } = await supabase
+  const { data: existingUser } = await supabase
     .from('users')
     .select('id')
     .eq('email', user.email)
     .single()
 
-  if (!existing) {
+  if (!existingUser) {
     await supabase.from('users').insert({
       email: user.email,
-      name: user.user_metadata?.name || '',
+      name: user.user_metadata?.full_name || user.user_metadata?.name || '',
       auth_id: user.id,
       role: 'user',
     })
