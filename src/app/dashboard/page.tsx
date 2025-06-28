@@ -30,25 +30,19 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
-    const fetchSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) {
-        router.replace('/login')
-      } else {
-        const email = data.session.user.email
-        // Added email check here
-        if (email) {
-          setUserId(email)
-          loadBots(email)
-        }
-      }
+  const checkSession = async () => {
+    const { data } = await supabase.auth.getSession()
+    if (!data.session) {
+      router.replace('/')
+    } else {
+      setUserId(data.session.user.id)
+      loadBots(data.session.user.email || '')
     }
-    fetchSession()
-  }, [router]) // Added router to dependency array
+  }
 
-  useEffect(() => {
-    fetch('/api/oauth-user', { method: 'POST' })
-  }, [])
+  checkSession()
+}, [router])
+
 
   const loadBots = async (email: string) => {
     const { data } = await supabase.from('bots').select('*').eq('user_id', email)

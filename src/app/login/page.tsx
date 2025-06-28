@@ -37,6 +37,12 @@ export default function LoginPage() {
   const handleGitHubLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
+      options: {
+        redirectTo:
+          process.env.NODE_ENV === 'development'
+            ? 'http://localhost:3000/dashboard'
+            : 'https://in60second.net/dashboard',
+      },
     })
     if (error) setError(error.message)
   }
@@ -44,6 +50,12 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
+      options: {
+        redirectTo:
+          process.env.NODE_ENV === 'development'
+            ? 'http://localhost:3000/dashboard'
+            : 'https://in60second.net/dashboard',
+      },
     })
     if (error) setError(error.message)
   }

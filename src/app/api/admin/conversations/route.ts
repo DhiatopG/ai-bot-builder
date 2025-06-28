@@ -10,20 +10,12 @@ export async function POST(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (key) => cookieStore.get(key)?.value || '',
+        get: (key) => cookieStore.get(key)?.value ?? '',
         set: async (key, value, options) => {
-          try {
-            await cookieStore.set({ name: key, value, ...options })
-          } catch (e) {
-            console.error('Cookie set error:', e)
-          }
+          cookieStore.set({ name: key, value, ...options })
         },
         remove: async (key, options) => {
-          try {
-            await cookieStore.delete({ name: key, ...options })
-          } catch (e) {
-            console.error('Cookie remove error:', e)
-          }
+          cookieStore.delete({ name: key, ...options })
         },
       },
     }

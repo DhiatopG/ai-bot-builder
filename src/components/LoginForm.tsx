@@ -23,30 +23,28 @@ export default function LoginForm() {
       return
     }
 
-    if (isLogin) {
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
+    let authResult
 
-      if (loginError) {
-        setError('Invalid email or password')
-        setLoading(false)
-        return
-      }
+    if (isLogin) {
+      authResult = await supabase.auth.signInWithPassword({ email, password })
     } else {
-      const { error: signUpError } = await supabase.auth.signUp({
+      authResult = await supabase.auth.signUp({
         email,
         password,
         options: { data: { name } }
       })
-
-      if (signUpError) {
-        setError(signUpError.message)
-        setLoading(false)
-        return
-      }
     }
+
+    const { error: authError } = authResult
+
+    if (authError) {
+      setError(authError.message)
+      setLoading(false)
+      return
+    }
+
+    // Force refresh session
+    await supabase.auth.getSession()
 
     router.push('/dashboard')
     setLoading(false)
@@ -55,7 +53,9 @@ export default function LoginForm() {
   const handleOAuthLogin = async (provider: 'google') => {
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${location.origin}/dashboard` }
+      options: {
+        redirectTo: `${location.origin}/dashboard`,
+      },
     })
   }
 
@@ -86,52 +86,27 @@ export default function LoginForm() {
           placeholder="Password"
           className="w-full px-4 py-2 border border-gray-300 rounded-md"
         />
+        {error && <p className="text-red-600">{error}</p>}
         <button
           onClick={handleSubmit}
+          className="bg-[#003366] text-white px-4 py-2 rounded-md w-full"
           disabled={loading}
-          className="w-full bg-[#003366] text-white py-2 rounded-md hover:bg-[#002244]"
         >
-          {loading
-            ? 'Please wait...'
-            : isLogin
-            ? 'Login with Email'
-            : 'Create Account'}
+          {loading ? 'Loading...' : isLogin ? 'Login' : 'Sign Up'}
         </button>
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <button
+          onClick={() => setIsLogin(!isLogin)}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          {isLogin ? 'Need an account? Sign up' : 'Already have an account? Log in'}
+        </button>
+        <button
+          onClick={() => handleOAuthLogin('google')}
+          className="w-full mt-4 bg-red-600 text-white py-2 rounded"
+        >
+          Sign in with Google
+        </button>
       </div>
-
-      <div className="text-center text-sm text-gray-500">
-        {isLogin ? (
-          <>
-            Don’t have an account?{' '}
-            <button
-              onClick={() => setIsLogin(false)}
-              className="text-[#00BFFF] underline"
-            >
-              Create one
-            </button>
-          </>
-        ) : (
-          <>
-            Already have an account?{' '}
-            <button
-              onClick={() => setIsLogin(true)}
-              className="text-[#00BFFF] underline"
-            >
-              Log in
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="text-center text-sm text-gray-400">— or —</div>
-
-      <button
-        onClick={() => handleOAuthLogin('google')}
-        className="w-full bg-white border border-gray-300 text-black py-2 rounded-md hover:bg-gray-100 mt-2"
-      >
-        Continue with Google
-      </button>
     </div>
   )
 }
