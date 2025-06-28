@@ -30,19 +30,34 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
-  const checkSession = async () => {
-    const { data } = await supabase.auth.getSession()
-    if (!data.session) {
-      router.replace('/')
-    } else {
-      setUserId(data.session.user.id)
-      loadBots(data.session.user.email || '')
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      const session = data.session
+      if (!session) {
+        router.replace('/')
+      } else {
+        const user = session.user
+        setUserId(user.id)
+        loadBots(user.email || '')
+
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', user.email)
+          .maybeSingle()
+
+        if (!existingUser) {
+          await supabase.from('users').insert({
+            email: user.email,
+            name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+            auth_id: user.id,
+          })
+        }
+      }
     }
-  }
 
-  checkSession()
-}, [router])
-
+    checkSession()
+  }, [router])
 
   const loadBots = async (email: string) => {
     const { data } = await supabase.from('bots').select('*').eq('user_id', email)
@@ -194,7 +209,7 @@ export default function DashboardPage() {
       </div>
       <main className="max-w-7xl mx-auto p-6 space-y-10">
         <section className="bg-[#F2F2F2] p-6 rounded-lg shadow-md space-y-4">  
-          <h2 className="text-lg font-semibold mb-4">Quick Launch</h2>  
+          <h2 className="text-lg font-semib极致的old mb-4">Quick Launch</h2>  
           <input type="text" placeholder="Bot Name" className="border border-[#CCCCCC] p-3 w-full rounded" value={botName} onChange={(e) => setBotName(e.target.value)} />  
           <textarea placeholder="Website URLs (one per line)" className="border border-[#CCCCCC] p-3 w-full rounded" value={urls} onChange={(e) => setUrls(e.target.value)} />  
           <textarea placeholder="Bot Description" className="border border-[#CCCCCC] p-3 w-full rounded" value={description} onChange={(e) => setDescription(e.target.value)} />  
