@@ -2,11 +2,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '../../../lib/supabase.ts'
-import DeleteBotButton from "./DeleteBotButton.tsx"
-import EditBotButton from "./EditBotButton.tsx"
-import OpenAsUserButton from "./OpenAsUserButton.tsx"
-import BotNoteEditor from "./BotNoteEditor.tsx"
+import { supabase } from '../../../lib/supabase'
+import DeleteBotButton from "./DeleteBotButton"
+import EditBotButton from "./EditBotButton"
+import OpenAsUserButton from "./OpenAsUserButton"
+import BotNoteEditor from "./BotNoteEditor"
 
 type User = {
   id: string

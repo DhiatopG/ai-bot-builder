@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from "../../../lib/supabase.ts"
+import { supabase } from "../../../lib/supabase"
 
 interface Conversation {
   id: string

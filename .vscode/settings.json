@@ -2,5 +2,5 @@
   "css.validate": false,
   "scss.validate": false,
   "less.validate": false,
-  "deno.enable": true
+  "deno.enable": false
 }
