@@ -1,11 +1,12 @@
+// deno-lint-ignore-file
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import DeleteBotButton from './DeleteBotButton'
-import EditBotButton from './EditBotButton'
-import OpenAsUserButton from './OpenAsUserButton'
-import BotNoteEditor from './BotNoteEditor'
+import { supabase } from '../../../lib/supabase.ts'
+import DeleteBotButton from "./DeleteBotButton.tsx"
+import EditBotButton from "./EditBotButton.tsx"
+import OpenAsUserButton from "./OpenAsUserButton.tsx"
+import BotNoteEditor from "./BotNoteEditor.tsx"
 
 type User = {
   id: string
@@ -61,23 +62,39 @@ export default function AdminDashboard() {
       setCurrentEmail(user.email)
 
       const res = await fetch('/api/admin/users')
-      if (res.status === 403) {
+      let userData = null
+      try {
+        userData = await res.json()
+      } catch {
+        setIsAdmin(false)
+        setLoading(false)
+        return
+      }
+
+      if (res.status === 403 || !Array.isArray(userData)) {
         setIsAdmin(false)
         setLoading(false)
         return
       }
 
       setIsAdmin(true)
-      const userData = await res.json()
-      if (Array.isArray(userData)) setUsers(userData)
+      setUsers(userData)
 
-      const convoRes = await fetch('/api/admin/conversations')
-      const convoData = await convoRes.json()
-      if (Array.isArray(convoData)) setConversations(convoData)
+      try {
+        const convoRes = await fetch('/api/admin/conversations')
+        const convoData = await convoRes.json()
+        if (Array.isArray(convoData)) setConversations(convoData)
+      } catch (err) {
+        void err
+      }
 
-      const botsRes = await fetch('/api/admin/bots')
-      const botsData = await botsRes.json()
-      if (Array.isArray(botsData)) setBots(botsData)
+      try {
+        const botsRes = await fetch('/api/admin/bots')
+        const botsData = await botsRes.json()
+        if (Array.isArray(botsData)) setBots(botsData)
+      } catch (err) {
+        void err
+      }
 
       setLoading(false)
     }
@@ -112,7 +129,10 @@ export default function AdminDashboard() {
               <p>Role: {u.role}</p>
               {currentEmail !== u.email && (
                 <button
-                  onClick={() => updateRole(u.email, u.role === 'admin' ? 'user' : 'admin')}
+                  type="button"
+                  onClick={() =>
+                    updateRole(u.email, u.role === 'admin' ? 'user' : 'admin')
+                  }
                   className="mt-2 mr-2 px-3 py-1 rounded bg-blue-600 text-white"
                 >
                   Make {u.role === 'admin' ? 'User' : 'Admin'}
@@ -138,8 +158,12 @@ export default function AdminDashboard() {
               <p>Bot: {c.bot_id}</p>
               <p>Q: {c.question}</p>
               <p>A: {c.answer}</p>
-              <p>Lead: {c.lead_name} - {c.lead_email}</p>
-              <p className="text-xs text-gray-600">{new Date(c.created_at).toLocaleString()}</p>
+              <p>
+                Lead: {c.lead_name} - {c.lead_email}
+              </p>
+              <p className="text-xs text-gray-600">
+                {new Date(c.created_at).toLocaleString()}
+              </p>
             </li>
           ))}
         </ul>
@@ -157,10 +181,17 @@ export default function AdminDashboard() {
               <p>API Key: {b.airtable_api_key?.slice(0, 6)}*****</p>
               <p>Base ID: {b.airtable_base_id}</p>
               <p>Table Name: {b.airtable_table_name}</p>
-              <p className="text-xs">{new Date(b.created_at).toLocaleString()}</p>
+              <p className="text-xs">
+                {new Date(b.created_at).toLocaleString()}
+              </p>
               <BotNoteEditor id={b.id} initial={b.note || ''} />
               <div className="flex gap-2 mt-2">
-                <DeleteBotButton id={b.id} onDelete={() => setBots(bots.filter(bot => bot.id !== b.id))} />
+                <DeleteBotButton
+                  id={b.id}
+                  onDelete={() =>
+                    setBots(bots.filter((bot) => bot.id !== b.id))
+                  }
+                />
                 <EditBotButton id={b.id} />
                 <OpenAsUserButton id={b.id} userId={b.user_id} />
               </div>

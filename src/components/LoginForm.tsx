@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase } from "../lib/supabase.ts"
 
 export default function LoginForm() {
   const router = useRouter()
@@ -43,14 +43,13 @@ export default function LoginForm() {
       return
     }
 
-    // Force refresh session
     await supabase.auth.getSession()
-
     router.push('/dashboard')
     setLoading(false)
   }
 
-  const handleOAuthLogin = async (provider: 'google') => {
+  const handleOAuthLogin = async (provider: 'google' | 'github') => {
+
     await supabase.auth.signInWithOAuth({
       provider,
       options: {
@@ -88,6 +87,7 @@ export default function LoginForm() {
         />
         {error && <p className="text-red-600">{error}</p>}
         <button
+          type="button"
           onClick={handleSubmit}
           className="bg-[#003366] text-white px-4 py-2 rounded-md w-full"
           disabled={loading}
@@ -95,12 +95,14 @@ export default function LoginForm() {
           {loading ? 'Loading...' : isLogin ? 'Login' : 'Sign Up'}
         </button>
         <button
+          type="button"
           onClick={() => setIsLogin(!isLogin)}
           className="text-sm text-blue-600 hover:underline"
         >
           {isLogin ? 'Need an account? Sign up' : 'Already have an account? Log in'}
         </button>
         <button
+          type="button"
           onClick={() => handleOAuthLogin('google')}
           className="w-full mt-4 bg-red-600 text-white py-2 rounded"
         >

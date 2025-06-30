@@ -38,7 +38,7 @@ export default function DashboardPage() {
       } else {
         const user = session.user
         setUserId(user.id)
-        loadBots(user.email || '')
+        loadBots(user.id)
 
         const { data: existingUser } = await supabase
           .from('users')
@@ -59,8 +59,8 @@ export default function DashboardPage() {
     checkSession()
   }, [router])
 
-  const loadBots = async (email: string) => {
-    const { data } = await supabase.from('bots').select('*').eq('user_id', email)
+  const loadBots = async (userId: string) => {
+    const { data } = await supabase.from('bots').select('*').eq('user_id', userId)
     setBots(data || [])
   }
 
@@ -209,7 +209,7 @@ export default function DashboardPage() {
       </div>
       <main className="max-w-7xl mx-auto p-6 space-y-10">
         <section className="bg-[#F2F2F2] p-6 rounded-lg shadow-md space-y-4">  
-          <h2 className="text-lg font-semib极致的old mb-4">Quick Launch</h2>  
+          <h2 className="text-lg font-semibold mb-4">Quick Launch</h2>  
           <input type="text" placeholder="Bot Name" className="border border-[#CCCCCC] p-3 w-full rounded" value={botName} onChange={(e) => setBotName(e.target.value)} />  
           <textarea placeholder="Website URLs (one per line)" className="border border-[#CCCCCC] p-3 w-full rounded" value={urls} onChange={(e) => setUrls(e.target.value)} />  
           <textarea placeholder="Bot Description" className="border border-[#CCCCCC] p-3 w-full rounded" value={description} onChange={(e) => setDescription(e.target.value)} />  

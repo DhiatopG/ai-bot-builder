@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies as nextCookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
+import process from 'node:process'
 
 async function createSupabase() {
   const cookieStore = await nextCookies()
@@ -30,7 +31,10 @@ export async function GET() {
   } = await supabase.auth.getUser()
 
   if (!user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   const { data: adminUser } = await supabase
@@ -40,7 +44,10 @@ export async function GET() {
     .single()
 
   if (adminUser?.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   const { data: users } = await supabase.from('users').select('*')
@@ -55,7 +62,10 @@ export async function PATCH(request: Request) {
   } = await supabase.auth.getUser()
 
   if (!user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   const { data: adminUser } = await supabase
@@ -65,7 +75,10 @@ export async function PATCH(request: Request) {
     .single()
 
   if (adminUser?.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   const { email, role } = await request.json()
@@ -76,7 +89,11 @@ export async function PATCH(request: Request) {
     .eq('email', email)
 
   if (error) {
-    return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+    return NextResponse.json(
+      { success: false, message: error.message },
+      // deno-lint-ignore no-explicit-any
+      { status: 500 } as any
+    )
   }
 
   return NextResponse.json({ success: true })

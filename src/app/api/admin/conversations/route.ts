@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies as nextCookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import process from 'node:process'
 
 export async function POST(request: Request) {
   const cookieStore = await nextCookies()
@@ -12,10 +13,10 @@ export async function POST(request: Request) {
       cookies: {
         get: (key) => cookieStore.get(key)?.value ?? '',
         set: async (key, value, options) => {
-          cookieStore.set({ name: key, value, ...options })
+          await cookieStore.set({ name: key, value, ...options })
         },
         remove: async (key, options) => {
-          cookieStore.delete({ name: key, ...options })
+          await cookieStore.delete({ name: key, ...options })
         },
       },
     }
@@ -27,7 +28,10 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
 
   if (userError || !user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   const { data: dbUser } = await supabase
@@ -37,10 +41,23 @@ export async function POST(request: Request) {
     .single()
 
   if (dbUser?.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
-  const body = await request.json()
+  let body
+  try {
+    body = await request.json()
+
+  } catch {
+  return new Response(JSON.stringify({ error: 'Invalid or missing JSON body' }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
   const { bot_id } = body
 
   const { error } = await supabase
@@ -49,7 +66,10 @@ export async function POST(request: Request) {
     .eq('id', bot_id)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   return NextResponse.json({ success: true })

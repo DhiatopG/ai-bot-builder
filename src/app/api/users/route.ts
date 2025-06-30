@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies as nextCookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import process from 'node:process'
 
 export async function GET() {
   const cookieStore = await nextCookies()
@@ -10,12 +10,12 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (key) => cookieStore.get(key)?.value ?? '',
+        get: async (key) => (await cookieStore).get(key)?.value ?? '',
         set: async (key, value, options) => {
-          cookieStore.set({ name: key, value, ...options })
+          ;(await cookieStore).set({ name: key, value, ...options })
         },
         remove: async (key, options) => {
-          cookieStore.delete({ name: key, ...options })
+          ;(await cookieStore).delete({ name: key, ...options })
         },
       },
     }
@@ -27,7 +27,10 @@ export async function GET() {
   } = await supabase.auth.getUser()
 
   if (userError || !user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   const { data: dbUser, error: roleError } = await supabase
@@ -37,7 +40,10 @@ export async function GET() {
     .single()
 
   if (roleError || dbUser?.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   const { data: users, error: fetchError } = await supabase
@@ -46,8 +52,14 @@ export async function GET() {
     .order('created_at', { ascending: false })
 
   if (fetchError) {
-    return NextResponse.json({ error: fetchError.message }, { status: 500 })
+    return new Response(JSON.stringify({ error: fetchError.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
-  return NextResponse.json(users)
+  return new Response(JSON.stringify(users), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
