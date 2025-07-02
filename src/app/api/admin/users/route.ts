@@ -1,100 +1,121 @@
-import { NextResponse } from 'next/server'
-import { cookies as nextCookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import process from 'node:process'
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
 
 async function createSupabase() {
-  const cookieStore = await nextCookies()
+  const cookieStore = await cookies();
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      cookies: {
-        get: (key) => cookieStore.get(key)?.value || '',
-        set: async (key, value, options) => {
-          await cookieStore.set({ name: key, value, ...options })
-        },
-        remove: async (key, options) => {
-          await cookieStore.delete({ name: key, ...options })
-        }
-      }
-    }
-  )
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Missing Supabase environment variables');
+  }
+
+  return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies: {
+      get: (key) => cookieStore.get(key)?.value ?? '',
+      set: async (key, value, options) => {
+        cookieStore.set({ name: key, value, ...options });
+      },
+      remove: async (key, options) => {
+        cookieStore.delete({ name: key, ...options });
+      },
+    },
+  });
 }
 
 export async function GET() {
-  const supabase = await createSupabase()
+  const supabase = await createSupabase();
 
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  console.log('session user email:', user?.email);
 
   if (!user?.email) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' }
-    })
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  const { data: adminUser } = await supabase
+  const { data: adminUser, error } = await supabase
     .from('users')
     .select('role')
     .eq('email', user.email)
-    .single()
+    .single();
 
-  if (adminUser?.role !== 'admin') {
+  if (error || adminUser?.role !== 'admin') {
     return new Response(JSON.stringify({ error: 'Forbidden' }), {
       status: 403,
-      headers: { 'Content-Type': 'application/json' }
-    })
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  const { data: users } = await supabase.from('users').select('*')
-  return NextResponse.json(users)
+  const { data: users, error: usersError } = await supabase
+    .from('users')
+    .select('*');
+
+  if (usersError) {
+    return NextResponse.json({ error: usersError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    users,
+    currentEmail: user.email,
+  });
 }
 
 export async function PATCH(request: Request) {
-  const supabase = await createSupabase()
+  const supabase = await createSupabase();
 
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user?.email) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' }
-    })
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  const { data: adminUser } = await supabase
+  const { data: adminUser, error } = await supabase
     .from('users')
     .select('role')
     .eq('email', user.email)
-    .single()
+    .single();
 
-  if (adminUser?.role !== 'admin') {
+  if (error || adminUser?.role !== 'admin') {
     return new Response(JSON.stringify({ error: 'Forbidden' }), {
       status: 403,
-      headers: { 'Content-Type': 'application/json' }
-    })
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  const { email, role } = await request.json()
+  const body = await request.json();
+  const { email, role } = body;
 
-  const { error } = await supabase
+  if (!email || !role) {
+    return new Response(JSON.stringify({ error: 'Invalid input' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const { error: updateError } = await supabase
     .from('users')
     .update({ role })
-    .eq('email', email)
+    .eq('email', email);
 
-  if (error) {
+  if (updateError) {
     return NextResponse.json(
-      { success: false, message: error.message },
-      // deno-lint-ignore no-explicit-any
-      { status: 500 } as any
-    )
+      { success: false, message: updateError.message },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true });
 }

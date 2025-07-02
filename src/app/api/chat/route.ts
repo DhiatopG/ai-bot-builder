@@ -5,11 +5,12 @@ import { cookies as nextCookies } from 'next/headers'
 import { ratelimit } from '@/lib/rateLimiter'
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 })
 
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for') || 'anonymous'
+
   const { success } = await ratelimit.limit(ip)
   if (!success) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
@@ -28,13 +29,13 @@ export async function POST(req: Request) {
         },
         remove: async (key, options) => {
           await cookieStore.delete({ name: key, ...options })
-        }
-      }
+        },
+      },
     }
   )
 
   const {
-    data: { user }
+    data: { user },
   } = await supabase.auth.getUser()
 
   if (!user?.email) {
@@ -44,12 +45,21 @@ export async function POST(req: Request) {
   const body = await req.json()
   const { question, user_id } = body
 
+  // ✅ DEBUG LOGGING
+  console.log('------ DEBUG START ------')
+  console.log('SESSION EMAIL:', user.email)
+  console.log('REQUEST BODY:', body)
+  console.log('user_id:', user_id)
+
   const { data: bot, error } = await supabase
     .from('bots')
     .select('id, description, scraped_content')
     .eq('id', user_id)
-    .eq('user_email', user.email)
     .single()
+
+  console.log('BOT:', bot)
+  console.log('QUERY ERROR:', error)
+  console.log('------ DEBUG END ------')
 
   if (error || !bot) {
     return NextResponse.json({ error: 'Bot not found' }, { status: 400 })
@@ -85,7 +95,7 @@ A:
   try {
     const chat = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
     })
 
     return NextResponse.json({ answer: chat.choices[0].message.content })

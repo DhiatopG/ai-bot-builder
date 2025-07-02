@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase';
 
 export default function UploadPage() {
   const router = useRouter()
@@ -11,9 +11,8 @@ export default function UploadPage() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser();
+
       if (!user?.email) {
         router.replace('/login')
       } else {

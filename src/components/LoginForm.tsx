@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from "../lib/supabase"
+import { supabase } from '@/lib/supabase/browser'
+
 
 export default function LoginForm() {
   const router = useRouter()
