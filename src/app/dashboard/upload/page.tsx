@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'
+import { X } from 'lucide-react'
 
 export default function UploadPage() {
   const router = useRouter()
@@ -11,7 +12,7 @@ export default function UploadPage() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser()
 
       if (!user?.email) {
         router.replace('/login')
@@ -63,27 +64,31 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-8 relative">
+    <div className="min-h-screen bg-black text-white relative p-8">
+      {/* Close Button */}
       <button
         onClick={() => router.push('/dashboard')}
-        className="absolute top-4 right-4 text-white text-xl font-bold hover:text-red-400"
+        className="absolute top-4 right-4 text-white hover:text-gray-400 transition-colors z-50"
+        aria-label="Close"
       >
-        ×
+        <X size={28} className="opacity-100" />
       </button>
 
-      <h2 className="text-xl font-bold mb-6 text-white">Upload PDF Knowledge Base</h2>
+      <div className="max-w-2xl mx-auto text-center">
+        <h2 className="text-xl font-bold mb-6">Upload PDF Knowledge Base</h2>
 
-      <label className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded cursor-pointer">
-        Click to Upload PDF
-        <input
-          type="file"
-          accept="application/pdf"
-          onChange={handleUpload}
-          className="hidden"
-        />
-      </label>
+        <label className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded cursor-pointer">
+          Click to Upload PDF
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={handleUpload}
+            className="hidden"
+          />
+        </label>
 
-      {uploading && <p className="mt-4 text-white">Uploading...</p>}
+        {uploading && <p className="mt-4">Uploading...</p>}
+      </div>
     </div>
   )
 }

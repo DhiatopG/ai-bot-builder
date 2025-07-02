@@ -1,26 +1,26 @@
-'use client'
+'use client';
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createBrowserClient } from '@supabase/ssr';
 
 export default function OAuthCallbackPage() {
-  const router = useRouter()
+  const router = useRouter();
 
   useEffect(() => {
-    const hash = window.location.hash
-    const params = new URLSearchParams(hash.substring(1))
-    const access_token = params.get('access_token')
-    const refresh_token = params.get('refresh_token')
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
 
-    if (access_token && refresh_token) {
-     supabase.auth.setSession({ access_token, refresh_token }).then(() => {
-        router.replace('/dashboard')
-      })
-    } else {
-      router.replace('/login')
-    }
-  }, [router])
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/login');
+      }
+    });
+  }, [router]);
 
-  return null
+  return <p className="text-white p-4">Loading...</p>;
 }

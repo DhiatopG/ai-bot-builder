@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from "../../../lib/supabase/browser"
+import { X } from 'lucide-react'
 
 interface Conversation {
   id: string
@@ -31,7 +32,7 @@ export default function ConversationsPage() {
       const { data, error: fetchError } = await supabase
         .from('conversations')
         .select('*')
-        .eq('user_email', user.email) // optional: filter per user
+        .eq('user_email', user.email)
         .order('created_at', { ascending: false })
 
       if (!fetchError && data) {
@@ -49,8 +50,17 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Visitor Conversations</h1>
+    <div className="p-6 max-w-4xl mx-auto relative min-h-screen bg-white">
+      {/* Close Button */}
+      <button
+        onClick={() => router.back()}
+        className="absolute top-4 right-4 text-black hover:text-gray-600 transition-colors z-50"
+        aria-label="Close"
+      >
+        <X size={28} className="opacity-100" />
+      </button>
+
+      <h1 className="text-2xl font-bold mb-4 text-black">Visitor Conversations</h1>
 
       {conversations.length === 0 ? (
         <p className="text-gray-500">No conversations yet.</p>

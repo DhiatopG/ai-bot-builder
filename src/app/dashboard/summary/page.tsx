@@ -84,14 +84,19 @@ export default function DailySummaryPage() {
   };
 
   return (
-    <div className="p-6">
-      <button onClick={() => router.back()} className="text-white hover:text-gray-400 mb-4">
-        <X size={24} />
+    <div className="p-6 relative min-h-screen bg-white">
+      {/* Fixed Close Icon at Top Right */}
+      <button
+        onClick={() => router.back()}
+        className="absolute top-4 right-4 text-black hover:text-gray-600 transition-colors z-50"
+        aria-label="Close"
+      >
+        <X size={28} className="opacity-100" />
       </button>
 
-      <h1 className="text-2xl font-bold mb-4">Daily Summary</h1>
+      <h1 className="text-2xl font-bold mb-4 text-black">Daily Summary</h1>
 
-      <label className="block mb-2 text-sm text-gray-400">Choose date:</label>
+      <label className="block mb-2 text-sm text-gray-500">Choose date:</label>
       <input
         type="date"
         value={selectedDate}
