@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/client';
-import { v4 as uuidv4 } from 'uuid'
+import toast from 'react-hot-toast'
 
 interface Bot {
   id: string
@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [answers, setAnswers] = useState('')
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+const [, setSavingBotId] = useState<string | null>(null)
 
   useEffect(() => {
     const checkSession = async () => {
@@ -65,23 +66,13 @@ export default function DashboardPage() {
   }
 
   const handleLaunch = async () => {
-    let logoUrl = ''
-    if (logoFile) {
-      const fileExt = logoFile.name.split('.').pop()
-      const filePath = `logos/${uuidv4()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage
-        .from('bot-assets')  
-        .upload(filePath, logoFile)
-      if (uploadError) {
-        alert('❌ Failed to upload logo.')  
-        return
-      }
-      const { data: publicUrlData } = supabase
-        .storage  
-        .from('bot-assets')  
-        .getPublicUrl(filePath)
-      logoUrl = publicUrlData.publicUrl
+    if (!botName || !description || !questions || !answers) {
+      toast.error('❌ Please fill in all required fields before launching a bot.');
+      return;
     }
+    
+    // SIMPLIFIED LOGO HANDLING - use direct URL or null
+    const finalLogoUrl = logoFile ? URL.createObjectURL(logoFile) : null;
 
     const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
     const qaPairs = questions
@@ -98,8 +89,9 @@ export default function DashboardPage() {
       body: JSON.stringify({
         userId,  
         botName,  
-        businessInfo: { urls: urlList, description, logo_url: logoUrl },  
+        businessInfo: { urls: urlList, description },  
         qaPairs,
+        logoUrl: finalLogoUrl,
       }),
     })
 
@@ -112,15 +104,10 @@ export default function DashboardPage() {
       setAnswers('')
       setLogoFile(null)
       loadBots(userId)
-      alert('✅ Bot created successfully.')
+      toast.success('✅ Bot created successfully.')
     } else {
-      alert('❌ Failed to create bot.')
+      toast.error('❌ Failed to create bot.')
     }
-  }
-
-  const updateBot = async (botId: string, field: string, value: string) => {
-    await supabase.from('bots').update({ [field]: value }).eq('id', botId)
-    loadBots(userId)
   }
 
   const handleDelete = async (botId: string) => {
@@ -135,8 +122,9 @@ export default function DashboardPage() {
 
     if (res.ok) {
       setBots((prev) => prev.filter((b) => b.id !== botId))
+      toast.success('✅ Bot deleted.');
     } else {
-      alert('❌ Failed to delete bot.')
+      toast.error('❌ Failed to delete bot.');
     }
   }
 
@@ -144,6 +132,76 @@ export default function DashboardPage() {
     await supabase.auth.signOut()
     router.replace('/login')
   }
+
+  const updateNocoDB = async (bot: Bot) => {
+    if (!bot.nocodb_api_url || !bot.nocodb_api_key || !bot.nocodb_table) {
+      toast.error('❌ Fill all NocoDB fields before saving.');
+      return;
+    }
+
+    setSavingBotId(bot.id);
+    const res = await fetch(`/api/bots/${bot.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nocodb_api_url: bot.nocodb_api_url,
+        nocodb_api_key: bot.nocodb_api_key,
+        nocodb_table: bot.nocodb_table,
+      }),
+    });
+    setSavingBotId(null);
+
+    if (res.ok) {
+      toast.success('✅ NocoDB settings saved');
+      loadBots(userId);
+    } else {
+      toast.error('❌ Failed to save NocoDB settings');
+    }
+  };
+
+  const updateCalendar = async (bot: Bot) => {
+    if (!bot.calendar_url) {
+      toast.error('❌ Calendar URL is required');
+      return;
+    }
+
+    setSavingBotId(bot.id);
+    const res = await fetch(`/api/bots/${bot.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calendar_url: bot.calendar_url }),
+    });
+    setSavingBotId(null);
+
+    if (res.ok) {
+      toast.success('✅ Calendar URL saved');
+      loadBots(userId);
+    } else {
+      toast.error('❌ Failed to save calendar URL');
+    }
+  };
+
+  const updateDocument = async (bot: Bot) => {
+    if (!bot.document_url) {
+      toast.error('❌ Document URL is required');
+      return;
+    }
+
+    setSavingBotId(bot.id);
+    const res = await fetch(`/api/bots/${bot.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_url: bot.document_url }),
+    });
+    setSavingBotId(null);
+
+    if (res.ok) {
+      toast.success('✅ Document URL saved');
+      loadBots(userId);
+    } else {
+      toast.error('❌ Failed to save document URL');
+    }
+  };
 
   return (
     <div className="bg-white text-[#333333] font-sans min-h-screen">
@@ -236,65 +294,81 @@ export default function DashboardPage() {
                     {`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`}  
                   </div>  
                   <div className="flex gap-2 mb-3">  
-                    <button className="text-xs px-3 py-1 bg-blue-600 text-white rounded" onClick={() =>  
-                      navigator.clipboard.writeText(  
-                        `<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`  
-                      )}>  
+                    <button className="text-xs px-3 py-1 bg-blue-600 text-white rounded" onClick={() => {
+                      navigator.clipboard.writeText(`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`);
+                      toast.success('✅ Embed script copied!');
+                    }}>  
                       Copy Script  
                     </button>  
                     <button className="text-xs px-3 py-1 bg-red-600 text-white rounded" onClick={() => handleDelete(bot.id)}>  
                       Delete  
                     </button>  
+                    <button
+                      className="text-xs px-3 py-1 bg-green-600 text-white rounded"
+                      onClick={() => router.push(`/dashboard/bots/${bot.id}/test`)}
+                    >
+                      Test Bot
+                    </button>
                   </div>  
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">  
-                    <input  
-                      className="p-2 text-sm border border-[#CCCCCC] rounded"  
-                      placeholder="NocoDB API URL"  
-                      value={bot.nocodb_api_url ?? ''}  
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_api_url: e.target.value } : b))}  
-                    />  
-                    <input  
-                      className="p-2 text-sm border border-[#CCCCCC] rounded"  
-                      placeholder="NocoDB API Key"  
-                      value={bot.nocodb_api_key ?? ''}  
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_api_key: e.target.value } : b))}  
-                    />  
-                    <input  
-                      className="p-2 text-sm border border-[#CCCCCC] rounded"  
-                      placeholder="NocoDB Table Name"  
-                      value={bot.nocodb_table ?? ''}  
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_table: e.target.value } : b))}  
-                    />  
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <input
-                      className="p-2 text-sm border border-[#CCCCCC] rounded"
+                      type="text"
+                      placeholder="NocoDB API URL"
+                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
+                      value={bot.nocodb_api_url ?? ''}
+                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_api_url: e.target.value } : b))}
+                    />
+                    <input
+                      type="text"
+                      placeholder="NocoDB API Key"
+                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
+                      value={bot.nocodb_api_key ?? ''}
+                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_api_key: e.target.value } : b))}
+                    />
+                    <input
+                      type="text"
+                      placeholder="NocoDB Table Name"
+                      className="p2 text-sm border border-[#CCCCCC] rounded w-full"
+                      value={bot.nocodb_table ?? ''}
+                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_table: e.target.value } : b))}
+                    />
+                    <button 
+                      onClick={() => updateNocoDB(bot)} 
+                      className="bg-blue-600 text-white px-3 py-2 rounded w-full text-sm"
+                    >
+                      Save NocoDB
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <input
+                      type="text"
                       placeholder="Calendar URL (optional)"
+                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
                       value={bot.calendar_url ?? ''}
-                      onChange={(e) =>
-                        setBots(bots.map(b => b.id === bot.id ? { ...b, calendar_url: e.target.value } : b))
-                      }
+                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, calendar_url: e.target.value } : b))}
                     />
+                    <button 
+                      onClick={() => updateCalendar(bot)} 
+                      className="bg-purple-600 text-white px-3 py-2 rounded w-full text-sm"
+                    >
+                      Save Calendar
+                    </button>
                     <input
-                      className="p-2 text-sm border border-[#CCCCCC] rounded"
+                      type="text"
                       placeholder="Document Upload URL (optional)"
+                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
                       value={bot.document_url ?? ''}
-                      onChange={(e) =>
-                        setBots(bots.map(b => b.id === bot.id ? { ...b, document_url: e.target.value } : b))
-                      }
+                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, document_url: e.target.value } : b))}
                     />
-                  </div>  
-                  <button  
-                    className="bg-[#003366] text-white px-3 py-2 rounded hover:bg-[#002244] text-xs mt-2"  
-                    onClick={async () => {  
-                      await updateBot(bot.id, 'nocodb_api_url', bot.nocodb_api_url || '')  
-                      await updateBot(bot.id, 'nocodb_api_key', bot.nocodb_api_key || '')  
-                      await updateBot(bot.id, 'nocodb_table', bot.nocodb_table || '')  
-                      await updateBot(bot.id, 'calendar_url', bot.calendar_url || '')
-                      await updateBot(bot.id, 'document_url', bot.document_url || '')  
-                    }}  
-                  >  
-                    Save  
-                  </button>  
+                    <button 
+                      onClick={() => updateDocument(bot)} 
+                      className="bg-teal-600 text-white px-3 py-2 rounded w-full text-sm"
+                    >
+                      Save Document URL
+                    </button>
+                  </div> 
                 </li>  
               ))}  
             </ul>  

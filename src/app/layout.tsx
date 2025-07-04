@@ -1,6 +1,7 @@
 import './globals.css'
 import { Providers } from './providers'
 import type { Metadata } from 'next'
+import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   title: 'AI SaaS',
@@ -11,7 +12,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="bg-white text-black">
-        <Providers>{children}</Providers>
+        <Providers>
+          <Toaster position="top-right" />
+          {children}
+        </Providers>
       </body>
     </html>
   )
