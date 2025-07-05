@@ -19,7 +19,7 @@ interface Bot {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [checkingSession, setCheckingSession] = useState(true) // ✅ Step ①
+  const [checkingSession, setCheckingSession] = useState(true)
   const [userId, setUserId] = useState('')
   const [bots, setBots] = useState<Bot[]>([])
   const [botName, setBotName] = useState('')
@@ -29,15 +29,23 @@ export default function DashboardPage() {
   const [answers, setAnswers] = useState('')
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-const [, setSavingBotId] = useState<string | null>(null)
+  const [, setSavingBotId] = useState<string | null>(null)
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession()
+    // Initial session check
+    supabase.auth.getSession().then(({ data }) => {
       const session = data.session
-      if (!session) {
-        router.replace('/')
-      } else {
+      if (session) {
+        const user = session.user
+        setUserId(user.id)
+        loadBots(user.id)
+        setCheckingSession(false)
+      }
+    })
+
+    // Auth state change listener
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
         const user = session.user
         setUserId(user.id)
         loadBots(user.id)
@@ -55,12 +63,17 @@ const [, setSavingBotId] = useState<string | null>(null)
             auth_id: user.id,
           })
         }
+
+        setCheckingSession(false)
+      } else {
+        setCheckingSession(false)
+        router.replace('/')
       }
+    })
 
-      setCheckingSession(false) // ✅ Step ③
+    return () => {
+      listener?.subscription?.unsubscribe()
     }
-
-    checkSession()
   }, [router])
 
   const loadBots = async (userId: string) => {
@@ -77,7 +90,7 @@ const [, setSavingBotId] = useState<string | null>(null)
     let finalLogoUrl = null
 
     if (logoFile) {
-      await supabase.auth.getSession() // ✅ This line ensures session is attached!
+      await supabase.auth.getSession()
 
       const fileExt = logoFile.name.split('.').pop()
       const fileName = `${crypto.randomUUID()}.${fileExt}`
@@ -229,7 +242,7 @@ const [, setSavingBotId] = useState<string | null>(null)
     }
   };
 
-  if (checkingSession) return <div className="p-10 text-center text-lg">Loading...</div> // ✅ Step ②
+  if (checkingSession) return <div className="p-10 text-center text-lg">Loading...</div>
 
   return (
     <div className="bg-white text-[#333333] font-sans min-h-screen">
