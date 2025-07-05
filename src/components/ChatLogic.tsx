@@ -103,8 +103,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       return
     }
 
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-    const res = await axios.post(`${baseUrl}/api/chat`, {
+    const res = await axios.post('/api/chat', {
       question: userMessage,
       user_id: botId,
       name,

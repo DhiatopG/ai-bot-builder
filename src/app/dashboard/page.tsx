@@ -19,6 +19,7 @@ interface Bot {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const [checkingSession, setCheckingSession] = useState(true) // ✅ Step ①
   const [userId, setUserId] = useState('')
   const [bots, setBots] = useState<Bot[]>([])
   const [botName, setBotName] = useState('')
@@ -55,6 +56,8 @@ const [, setSavingBotId] = useState<string | null>(null)
           })
         }
       }
+
+      setCheckingSession(false) // ✅ Step ③
     }
 
     checkSession()
@@ -71,8 +74,31 @@ const [, setSavingBotId] = useState<string | null>(null)
       return;
     }
     
-    // SIMPLIFIED LOGO HANDLING - use direct URL or null
-    const finalLogoUrl = logoFile ? URL.createObjectURL(logoFile) : null;
+    let finalLogoUrl = null
+
+    if (logoFile) {
+      await supabase.auth.getSession() // ✅ This line ensures session is attached!
+
+      const fileExt = logoFile.name.split('.').pop()
+      const fileName = `${crypto.randomUUID()}.${fileExt}`
+      const filePath = `logos/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('bot-logos')
+        .upload(filePath, logoFile, { upsert: true })
+
+      if (uploadError) {
+        console.error('Logo upload failed:', JSON.stringify(uploadError, null, 2))
+        toast.error(`❌ Upload failed: ${uploadError.message || 'unknown error'}`)
+        return
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('bot-logos')
+        .getPublicUrl(filePath)
+
+      finalLogoUrl = publicUrlData?.publicUrl || null
+    }
 
     const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
     const qaPairs = questions
@@ -202,6 +228,8 @@ const [, setSavingBotId] = useState<string | null>(null)
       toast.error('❌ Failed to save document URL');
     }
   };
+
+  if (checkingSession) return <div className="p-10 text-center text-lg">Loading...</div> // ✅ Step ②
 
   return (
     <div className="bg-white text-[#333333] font-sans min-h-screen">
