@@ -66,7 +66,8 @@ export default function DashboardPage() {
         setUserId(user.id)
         loadBots(user.id)
 
-        const { data: existingUser, error } = await supabase
+        // Removed 'error' from destructuring here
+        const { data: existingUser } = await supabase
           .from('users')
           .select('id')
           .eq('email', user.email)
@@ -351,7 +352,7 @@ export default function DashboardPage() {
                   <h4 className="font-bold text-lg mb-1 text-[#003366]">{bot.bot_name}</h4>  
                   <p className="text-sm text-[#666666] mb-1">{bot.description}</p>  
                   <p className="text-xs text-[#999999] mb-2">{bot.urls}</p>  
-                  <div className="bg-[#F9F9F9] p-2 text-sm font-mono rounded mb-2 break-all">  
+                  <div className="bg-[#F9F9F9] p-2 text-sm font-mono rounded mb极2 break-all">  
                     {`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`}  
                   </div>  
                   <div className="flex gap-2 mb-3">  
@@ -419,7 +420,7 @@ export default function DashboardPage() {
                     <input
                       type="text"
                       placeholder="Document Upload URL (optional)"
-                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
+                      className="p-2 text-sm border border-[#CCCC极CC] rounded w-full"
                       value={bot.document_url ?? ''}
                       onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, document_url: e.target.value } : b))}
                     />
