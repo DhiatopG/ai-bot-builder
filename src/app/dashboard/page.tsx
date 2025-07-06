@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/client';
 import toast from 'react-hot-toast'
+import type { AuthChangeEvent } from '@supabase/supabase-js' // ✅ Fix 1: Added import
 
 interface Bot {
   id: string
@@ -45,7 +46,24 @@ export default function DashboardPage() {
           if (data?.session) {
             const user = data.session.user
             setUserId(user.id)
-            loadBots(user.id)
+
+            // ✅ Ensure user exists in Supabase DB
+            const { data: existingUser } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', user.email)
+              .maybeSingle()
+
+            if (!existingUser) {
+              console.log("🆕 Creating user in 'users' table")
+              await supabase.from('users').insert({
+                email: user.email,
+                name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+                auth_id: user.id,
+              })
+            }
+
+            await loadBots(user.id)
             setCheckingSession(false)
             return
           }
@@ -61,23 +79,51 @@ export default function DashboardPage() {
       }
 
       console.warn("❌ No session found after retries")
-      setCheckingSession(false)
-      router.replace('/')
+
+      // 🔁 Final chance: maybe session is just late
+      const { data: userCheck } = await supabase.auth.getUser()
+      if (userCheck?.user) {
+        console.log("🟡 Session recovered at last second:", userCheck.user)
+        setUserId(userCheck.user.id)
+        loadBots(userCheck.user.id)
+        setCheckingSession(false)
+      } else {
+        setCheckingSession(false)
+        router.replace('/')
+      }
     }
 
     checkSession()
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session) => { // ✅ Fix 2: Added type
       console.log("🔁 onAuthStateChange:", event, session)
 
       if (session && event === 'INITIAL_SESSION') {
         const user = session.user
         setUserId(user.id)
-        loadBots(user.id)
+
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', user.email)
+          .maybeSingle()
+
+        if (!existingUser) {
+          console.log("🆕 Creating new user record...")
+          await supabase.from('users').insert({
+            email: user.email,
+            name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+            auth_id: user.id,
+          })
+        }
+
+        await loadBots(user.id)
         setCheckingSession(false)
       }
 
-      if (!session && event === 'SIGNED_OUT') {
+      // ✅ Fix 3: Replaced condition
+      if (event === 'SIGNED_OUT' || (!session && event === 'INITIAL_SESSION')) {
+        console.warn("🔒 Signed out or no session on initial load, redirecting to /")
         setCheckingSession(false)
         router.replace('/')
       }
