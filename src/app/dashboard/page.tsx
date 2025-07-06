@@ -12,7 +12,7 @@ interface Bot {
   urls: string
   nocodb_api_url?: string | null
   nocodb_api_key?: string | null
-  nocodb_table?: string | null
+  nocodb_table?: string |null
   calendar_url?: string | null
   document_url?: string | null
 }
@@ -36,8 +36,6 @@ export default function DashboardPage() {
   useEffect(() => {
     console.log("🔍 useEffect started")
 
-    let finished = false
-
     supabase.auth.getSession()
       .then(({ data, error }) => {
         console.log("📦 getSession result:", data, error)
@@ -46,16 +44,14 @@ export default function DashboardPage() {
           const user = session.user
           setUserId(user.id)
           loadBots(user.id)
-          finished = true
+          setCheckingSession(false)
         } else {
-          console.log("❌ No session from getSession")
+          console.log("❌ No session from getSession — waiting for onAuthStateChange")
+          // do NOT setCheckingSession(false) yet
         }
       })
       .catch(err => {
         console.error("🔥 Error in getSession:", err)
-      })
-      .finally(() => {
-        if (!finished) console.log("⚠️ No session handled in .then")
         setCheckingSession(false)
       })
 
@@ -66,7 +62,6 @@ export default function DashboardPage() {
         setUserId(user.id)
         loadBots(user.id)
 
-        // Removed 'error' from destructuring here
         const { data: existingUser } = await supabase
           .from('users')
           .select('id')
@@ -83,7 +78,7 @@ export default function DashboardPage() {
 
         setCheckingSession(false)
       } else {
-        console.log("🧨 onAuthStateChange received null session")
+        console.log("🧨 No session on auth state change")
         setCheckingSession(false)
         router.replace('/')
       }
@@ -352,7 +347,7 @@ export default function DashboardPage() {
                   <h4 className="font-bold text-lg mb-1 text-[#003366]">{bot.bot_name}</h4>  
                   <p className="text-sm text-[#666666] mb-1">{bot.description}</p>  
                   <p className="text-xs text-[#999999] mb-2">{bot.urls}</p>  
-                  <div className="bg-[#F9F9F9] p-2 text-sm font-mono rounded mb极2 break-all">  
+                  <div className="bg-[#F9F9F9] p-2 text-sm font-mono rounded mb-2 break-all">  
                     {`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`}  
                   </div>  
                   <div className="flex gap-2 mb-3">  
@@ -420,7 +415,7 @@ export default function DashboardPage() {
                     <input
                       type="text"
                       placeholder="Document Upload URL (optional)"
-                      className="p-2 text-sm border border-[#CCCC极CC] rounded w-full"
+                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
                       value={bot.document_url ?? ''}
                       onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, document_url: e.target.value } : b))}
                     />
