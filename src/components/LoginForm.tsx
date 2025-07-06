@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/browser'
 
-
 export default function LoginForm() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
@@ -13,6 +12,15 @@ export default function LoginForm() {
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const handleOAuthLogin = async (provider: 'google' | 'github') => {
+    await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${location.origin}/dashboard`,
+      },
+    })
+  }
 
   const handleSubmit = async () => {
     setError('')
@@ -34,10 +42,27 @@ export default function LoginForm() {
         password,
         options: { data: { name } }
       })
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+      if (user && !userError) {
+        const { data: existing } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', user.email)
+          .maybeSingle()
+
+        if (!existing) {
+          await supabase.from('users').insert({
+            email: user.email,
+            name: user.user_metadata?.name || user.email,
+            auth_id: user.id,
+          })
+        }
+      }
     }
 
     const { error: authError } = authResult
-
     if (authError) {
       setError(authError.message)
       setLoading(false)
@@ -47,16 +72,6 @@ export default function LoginForm() {
     await supabase.auth.getSession()
     router.push('/dashboard')
     setLoading(false)
-  }
-
-  const handleOAuthLogin = async (provider: 'google' | 'github') => {
-
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${location.origin}/dashboard`,
-      },
-    })
   }
 
   return (

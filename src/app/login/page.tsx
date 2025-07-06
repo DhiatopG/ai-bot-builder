@@ -19,19 +19,35 @@ export default function LoginPage() {
       return
     }
 
-    let result
     if (mode === 'signup') {
-      result = await supabase.auth.signUp({ email, password })
+      const signUpResult = await supabase.auth.signUp({ email, password })
+
+      if (signUpResult.error) {
+        setError(signUpResult.error.message)
+        return
+      }
+
+      // 🔁 Wait for session (important if email confirmation is disabled)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session) {
+        setError('Session not ready after signup. Please try logging in.')
+        return
+      }
+
+      router.replace('/dashboard')
     } else {
-      result = await supabase.auth.signInWithPassword({ email, password })
-    }
+      const result = await supabase.auth.signInWithPassword({ email, password })
 
-    if (result.error) {
-      setError(result.error.message)
-      return
-    }
+      if (result.error) {
+        setError(result.error.message)
+        return
+      }
 
-    router.replace('/dashboard')
+      router.replace('/dashboard')
+    }
   }
 
   const insertUserIfNotExists = async () => {
@@ -48,12 +64,13 @@ export default function LoginPage() {
 
       if (!existing) {
         await supabase.from('users').insert({
-          email: user.email,
-          name: user.user_metadata.full_name || user.user_metadata.name,
-          uuid: user.id,
-          auth_id: user.id,
-          role: 'user',
-        })
+  email: user.email,
+  name: user.user_metadata.full_name || user.user_metadata.name,
+  uuid: user.id,
+  auth_id: user.id,
+  role: 'user',
+})
+
       }
     }
   }

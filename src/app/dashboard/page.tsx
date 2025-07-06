@@ -33,61 +33,47 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [, setSavingBotId] = useState<string | null>(null)
 
-  useEffect(() => {
-    console.log("🔍 useEffect started")
+ useEffect(() => {
+  console.log("🔍 useEffect started")
 
-    supabase.auth.getSession()
-      .then(({ data, error }) => {
-        console.log("📦 getSession result:", data, error)
-        const session = data?.session
-        if (session) {
-          const user = session.user
-          setUserId(user.id)
-          loadBots(user.id)
-          setCheckingSession(false)
-        } else {
-          console.log("❌ No session from getSession — waiting for onAuthStateChange")
-          // do NOT setCheckingSession(false) yet
-        }
-      })
-      .catch(err => {
-        console.error("🔥 Error in getSession:", err)
-        setCheckingSession(false)
-      })
+  supabase.auth.getSession()
+    .then(({ data }) => {
+      const session = data?.session
+      console.log("📦 getSession result:", session)
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("🔁 onAuthStateChange:", event, session)
       if (session) {
         const user = session.user
         setUserId(user.id)
         loadBots(user.id)
-
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', user.email)
-          .maybeSingle()
-
-        if (!existingUser) {
-          await supabase.from('users').insert({
-            email: user.email,
-            name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-            auth_id: user.id,
-          })
-        }
-
         setCheckingSession(false)
-      } else {
-        console.log("🧨 No session on auth state change")
-        setCheckingSession(false)
-        router.replace('/')
       }
     })
+    .catch(err => {
+      console.error("🔥 Error in getSession:", err)
+      setCheckingSession(false)
+    })
 
-    return () => {
-      listener?.subscription?.unsubscribe()
+  const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    console.log("🔁 onAuthStateChange:", event, session)
+
+    if (session && event === 'INITIAL_SESSION') {
+      const user = session.user
+      setUserId(user.id)
+      loadBots(user.id)
+      setCheckingSession(false)
     }
-  }, [router])
+
+    if (!session && event === 'SIGNED_OUT') {
+      setCheckingSession(false)
+      router.replace('/')
+    }
+  })
+
+  return () => {
+    listener.subscription.unsubscribe()
+  }
+}, [router])
+
 
   const loadBots = async (userId: string) => {
     const { data } = await supabase.from('bots').select('*').eq('user_id', userId)
