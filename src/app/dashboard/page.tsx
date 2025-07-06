@@ -18,6 +18,8 @@ interface Bot {
 }
 
 export default function DashboardPage() {
+  console.log("🚀 DashboardPage loaded")
+  
   const router = useRouter()
   const [checkingSession, setCheckingSession] = useState(true)
   const [userId, setUserId] = useState('')
@@ -32,25 +34,39 @@ export default function DashboardPage() {
   const [, setSavingBotId] = useState<string | null>(null)
 
   useEffect(() => {
-    // Initial session check
-    supabase.auth.getSession().then(({ data }) => {
-      const session = data.session
-      if (session) {
-        const user = session.user
-        setUserId(user.id)
-        loadBots(user.id)
+    console.log("🔍 useEffect started")
+
+    let finished = false
+
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        console.log("📦 getSession result:", data, error)
+        const session = data?.session
+        if (session) {
+          const user = session.user
+          setUserId(user.id)
+          loadBots(user.id)
+          finished = true
+        } else {
+          console.log("❌ No session from getSession")
+        }
+      })
+      .catch(err => {
+        console.error("🔥 Error in getSession:", err)
+      })
+      .finally(() => {
+        if (!finished) console.log("⚠️ No session handled in .then")
         setCheckingSession(false)
-      }
-    })
+      })
 
-    // Auth state change listener
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("🔁 onAuthStateChange:", event, session)
       if (session) {
         const user = session.user
         setUserId(user.id)
         loadBots(user.id)
 
-        const { data: existingUser } = await supabase
+        const { data: existingUser, error } = await supabase
           .from('users')
           .select('id')
           .eq('email', user.email)
@@ -66,6 +82,7 @@ export default function DashboardPage() {
 
         setCheckingSession(false)
       } else {
+        console.log("🧨 onAuthStateChange received null session")
         setCheckingSession(false)
         router.replace('/')
       }
@@ -242,7 +259,10 @@ export default function DashboardPage() {
     }
   };
 
-  if (checkingSession) return <div className="p-10 text-center text-lg">Loading...</div>
+  if (checkingSession) {
+    console.log("⏳ Still waiting for session...")
+    return <div className="p-10 text-center text-lg">Loading...</div>
+  }
 
   return (
     <div className="bg-white text-[#333333] font-sans min-h-screen">
