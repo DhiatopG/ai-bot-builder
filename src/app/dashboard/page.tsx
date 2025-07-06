@@ -12,7 +12,7 @@ interface Bot {
   urls: string
   nocodb_api_url?: string | null
   nocodb_api_key?: string | null
-  nocodb_table?: string |null
+  nocodb_table?: string | null
   calendar_url?: string | null
   document_url?: string | null
 }
@@ -33,47 +33,60 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [, setSavingBotId] = useState<string | null>(null)
 
- useEffect(() => {
-  console.log("🔍 useEffect started")
+  useEffect(() => {
+    console.log("🔍 useEffect started")
 
-  supabase.auth.getSession()
-    .then(({ data }) => {
-      const session = data?.session
-      console.log("📦 getSession result:", session)
+    const checkSession = async () => {
+      for (let i = 0; i < 5; i++) {
+        try {
+          const { data, error } = await supabase.auth.getSession()
+          console.log(`⏳ Attempt ${i + 1}:`, data)
 
-      if (session) {
+          if (data?.session) {
+            const user = data.session.user
+            setUserId(user.id)
+            loadBots(user.id)
+            setCheckingSession(false)
+            return
+          }
+
+          if (error) {
+            console.error(`Error in attempt ${i+1}:`, error)
+          }
+        } catch (err) {
+          console.error(`Error in attempt ${i+1}:`, err)
+        }
+
+        await new Promise((res) => setTimeout(res, 500))
+      }
+
+      console.warn("❌ No session found after retries")
+      setCheckingSession(false)
+      router.replace('/')
+    }
+
+    checkSession()
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("🔁 onAuthStateChange:", event, session)
+
+      if (session && event === 'INITIAL_SESSION') {
         const user = session.user
         setUserId(user.id)
         loadBots(user.id)
         setCheckingSession(false)
       }
+
+      if (!session && event === 'SIGNED_OUT') {
+        setCheckingSession(false)
+        router.replace('/')
+      }
     })
-    .catch(err => {
-      console.error("🔥 Error in getSession:", err)
-      setCheckingSession(false)
-    })
 
-  const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-    console.log("🔁 onAuthStateChange:", event, session)
-
-    if (session && event === 'INITIAL_SESSION') {
-      const user = session.user
-      setUserId(user.id)
-      loadBots(user.id)
-      setCheckingSession(false)
+    return () => {
+      listener.subscription.unsubscribe()
     }
-
-    if (!session && event === 'SIGNED_OUT') {
-      setCheckingSession(false)
-      router.replace('/')
-    }
-  })
-
-  return () => {
-    listener.subscription.unsubscribe()
-  }
-}, [router])
-
+  }, [router])
 
   const loadBots = async (userId: string) => {
     const { data } = await supabase.from('bots').select('*').eq('user_id', userId)
