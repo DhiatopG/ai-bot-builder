@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/client';
 import toast from 'react-hot-toast'
-import type { AuthChangeEvent } from '@supabase/supabase-js' // ✅ Fix 1: Added import
+import type { AuthChangeEvent } from '@supabase/supabase-js'
 
 interface Bot {
   id: string
@@ -61,6 +61,17 @@ export default function DashboardPage() {
                 name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
                 auth_id: user.id,
               })
+
+              // ✅ Added welcome email
+              try {
+                await fetch('/api/send-welcome-email', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email: user.email }),
+                })
+              } catch (err) {
+                console.error('❌ Failed to send welcome email', err)
+              }
             }
 
             await loadBots(user.id)
@@ -95,7 +106,7 @@ export default function DashboardPage() {
 
     checkSession()
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session) => { // ✅ Fix 2: Added type
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session) => {
       console.log("🔁 onAuthStateChange:", event, session)
 
       if (session && event === 'INITIAL_SESSION') {
@@ -115,13 +126,23 @@ export default function DashboardPage() {
             name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
             auth_id: user.id,
           })
+
+          // ✅ Added welcome email
+          try {
+            await fetch('/api/send-welcome-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: user.email }),
+            })
+          } catch (err) {
+            console.error('❌ Failed to send welcome email', err)
+          }
         }
 
         await loadBots(user.id)
         setCheckingSession(false)
       }
 
-      // ✅ Fix 3: Replaced condition
       if (event === 'SIGNED_OUT' || (!session && event === 'INITIAL_SESSION')) {
         console.warn("🔒 Signed out or no session on initial load, redirecting to /")
         setCheckingSession(false)
