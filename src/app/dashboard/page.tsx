@@ -99,6 +99,20 @@ export default function DashboardPage() {
         loadBots(userCheck.user.id)
         setCheckingSession(false)
       } else {
+        const hasRedirected = sessionStorage.getItem('first_signup_redirect_done')
+        if (!hasRedirected) {
+          sessionStorage.setItem('first_signup_redirect_done', 'true')
+
+          document.body.innerHTML = `<div style="font-size: 22px; text-align: center; margin-top: 100px;">
+            We’re creating your dashboard...<br/>Please log in again in a few seconds.
+          </div>`
+
+          setTimeout(() => {
+            router.replace('/login')
+          }, 4000)
+          return
+        }
+
         setCheckingSession(false)
         router.replace('/')
       }
@@ -500,4 +514,4 @@ export default function DashboardPage() {
       </main>
     </div>
   )
-}
+}  
