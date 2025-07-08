@@ -27,7 +27,6 @@ export default function LoginPage() {
         return
       }
 
-      // 🔁 Wait for session (important if email confirmation is disabled)
       const {
         data: { session },
       } = await supabase.auth.getSession()
@@ -64,13 +63,12 @@ export default function LoginPage() {
 
       if (!existing) {
         await supabase.from('users').insert({
-  email: user.email,
-  name: user.user_metadata.full_name || user.user_metadata.name,
-  uuid: user.id,
-  auth_id: user.id,
-  role: 'user',
-})
-
+          email: user.email,
+          name: user.user_metadata.full_name || user.user_metadata.name,
+          uuid: user.id,
+          auth_id: user.id,
+          role: 'user',
+        })
       }
     }
   }
@@ -81,8 +79,8 @@ export default function LoginPage() {
       options: {
         redirectTo:
           process.env.NODE_ENV === 'development'
-            ? 'http://localhost:3000/dashboard'
-            : 'https://in60second.net/dashboard',
+            ? 'http://localhost:3000/auth/callback'
+            : 'https://in60second.net/auth/callback',
       },
     })
 
@@ -96,8 +94,8 @@ export default function LoginPage() {
       options: {
         redirectTo:
           process.env.NODE_ENV === 'development'
-            ? 'http://localhost:3000/dashboard'
-            : 'https://in60second.net/dashboard',
+            ? 'http://localhost:3000/auth/callback'
+            : 'https://in60second.net/auth/callback',
       },
     })
 

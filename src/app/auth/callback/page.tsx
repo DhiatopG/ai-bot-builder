@@ -1,26 +1,50 @@
-'use client';
+'use client'
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { createBrowserClient } from '@supabase/ssr';
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/client'
 
-export default function OAuthCallbackPage() {
-  const router = useRouter();
+export default function OAuthCallback() {
+  const router = useRouter()
 
   useEffect(() => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    const handleRedirect = async () => {
+      const { data: userData } = await supabase.auth.getUser()
+      const user = userData.user
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        router.replace('/dashboard');
+      if (!user) return router.replace('/login')
+
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', user.id)
+        .maybeSingle()
+
+      if (!existingUser) {
+        await supabase.from('users').insert({
+          email: user.email,
+          name: user.user_metadata.full_name || user.user_metadata.name,
+          auth_id: user.id,
+          role: 'user',
+        })
+
+        sessionStorage.setItem('first_signup_redirect_done', 'true')
+
+        setTimeout(() => {
+          router.replace('/login')
+        }, 3000)
       } else {
-        router.replace('/login');
+        router.replace('/dashboard')
       }
-    });
-  }, [router]);
+    }
 
-  return <p className="text-white p-4">Loading...</p>;
+    handleRedirect()
+  }, [router])
+
+  return (
+    <div className="p-10 text-center text-lg">
+      We’re creating your dashboard...<br />
+      Please wait, you’ll be redirected.
+    </div>
+  )
 }
