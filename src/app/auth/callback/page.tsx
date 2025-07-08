@@ -4,53 +4,50 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/client'
 
-export default function AuthCallback() {
+export default function AuthCallbackPage() {
   const router = useRouter()
 
   useEffect(() => {
-    const checkUser = async () => {
+    const handleAuthRedirect = async () => {
       console.log('[AuthCallback] waiting for session...')
-      const { data: sessionData } = await supabase.auth.getSession()
-      const session = sessionData.session
-      console.log('[AuthCallback] session:', session)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-      if (!session?.user) {
-        console.log('[AuthCallback] no session user — redirecting to /login')
+      if (sessionError) {
+        console.error('[AuthCallback] session error:', sessionError)
         router.replace('/login')
         return
       }
 
-      const user = session.user
+      const user = session?.user
+      console.log('[AuthCallback] session:', session)
 
-      const { data: existing } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .maybeSingle()
-
-      if (!existing) {
-        console.log('[AuthCallback] inserting user...')
-        await supabase.from('users').insert({
-          email: user.email,
-          name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-          uuid: user.id,
-          auth_id: user.id,
-          role: 'user',
-        })
-        setTimeout(() => router.replace('/login'), 3000)
-      } else {
-        console.log('[AuthCallback] user exists — going to dashboard')
-        router.replace('/dashboard')
+      if (!user) {
+        console.log('[AuthCallback] no user — redirecting to /login')
+        router.replace('/login')
+        return
       }
+
+      console.log('[AuthCallback] inserting user...')
+      const { error: insertError } = await supabase.from('users').insert({
+        email: user.email,
+        name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+        auth_id: user.id,
+        role: 'user',
+      })
+
+      if (insertError) {
+        console.warn('[AuthCallback] insert error:', insertError.message)
+      }
+
+      router.replace('/login')
     }
 
-    checkUser()
+    handleAuthRedirect()
   }, [router])
 
   return (
     <div className="p-10 text-center text-lg">
-      We’re creating your dashboard...<br />
-      Please wait, you’ll be redirected shortly.
+      We’re creating your dashboard...<br />Please log in again in a few seconds.
     </div>
   )
 }
