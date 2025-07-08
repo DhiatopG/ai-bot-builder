@@ -23,6 +23,7 @@ export default function DashboardPage() {
   
   const router = useRouter()
   const [checkingSession, setCheckingSession] = useState(true)
+  const [forceRedirect, setForceRedirect] = useState(false)
   const [userId, setUserId] = useState('')
   const [bots, setBots] = useState<Bot[]>([])
   const [botName, setBotName] = useState('')
@@ -102,11 +103,7 @@ export default function DashboardPage() {
         const hasRedirected = sessionStorage.getItem('first_signup_redirect_done')
         if (!hasRedirected) {
           sessionStorage.setItem('first_signup_redirect_done', 'true')
-
-          document.body.innerHTML = `<div style="font-size: 22px; text-align: center; margin-top: 100px;">
-            We’re creating your dashboard...<br/>Please log in again in a few seconds.
-          </div>`
-
+          setForceRedirect(true)
           setTimeout(() => {
             router.replace('/login')
           }, 4000)
@@ -334,6 +331,14 @@ export default function DashboardPage() {
       toast.error('❌ Failed to save document URL');
     }
   };
+
+  if (forceRedirect) {
+    return (
+      <div className="p-10 text-center text-lg">
+        We’re creating your dashboard...<br />Please log in again in a few seconds.
+      </div>
+    )
+  }
 
   if (checkingSession) {
     console.log("⏳ Still waiting for session...")
