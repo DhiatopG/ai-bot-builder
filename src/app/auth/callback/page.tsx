@@ -4,31 +4,33 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/client'
 
-export default function OAuthCallback() {
+export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
-    const handleRedirect = async () => {
-      const { data: userData } = await supabase.auth.getUser()
-      const user = userData.user
+    const finishOAuth = async () => {
+      const { data: userData, error } = await supabase.auth.getUser()
+      const user = userData?.user
 
-      if (!user) return router.replace('/login')
+      if (error || !user) {
+        router.replace('/login')
+        return
+      }
 
-      const { data: existingUser } = await supabase
+      const { data: existing } = await supabase
         .from('users')
         .select('id')
         .eq('auth_id', user.id)
         .maybeSingle()
 
-      if (!existingUser) {
+      if (!existing) {
         await supabase.from('users').insert({
           email: user.email,
-          name: user.user_metadata.full_name || user.user_metadata.name,
+          name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+          uuid: user.id,
           auth_id: user.id,
           role: 'user',
         })
-
-        sessionStorage.setItem('first_signup_redirect_done', 'true')
 
         setTimeout(() => {
           router.replace('/login')
@@ -38,13 +40,13 @@ export default function OAuthCallback() {
       }
     }
 
-    handleRedirect()
+    finishOAuth()
   }, [router])
 
   return (
     <div className="p-10 text-center text-lg">
       We’re creating your dashboard...<br />
-      Please wait, you’ll be redirected.
+      Please wait, you’ll be redirected shortly.
     </div>
   )
 }
