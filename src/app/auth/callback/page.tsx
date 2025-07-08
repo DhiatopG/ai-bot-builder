@@ -9,13 +9,17 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const finishOAuth = async () => {
+      console.log('[AuthCallback] checking user...')
       const { data: userData, error } = await supabase.auth.getUser()
-      const user = userData?.user
+      console.log('[AuthCallback] userData:', userData)
 
-      if (error || !user) {
+      if (error || !userData?.user) {
+        console.log('[AuthCallback] no user — redirecting to /login')
         router.replace('/login')
         return
       }
+
+      const user = userData.user
 
       const { data: existing } = await supabase
         .from('users')
@@ -23,7 +27,10 @@ export default function AuthCallback() {
         .eq('auth_id', user.id)
         .maybeSingle()
 
+      console.log('[AuthCallback] existing user:', existing)
+
       if (!existing) {
+        console.log('[AuthCallback] inserting new user...')
         await supabase.from('users').insert({
           email: user.email,
           name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
@@ -31,11 +38,10 @@ export default function AuthCallback() {
           auth_id: user.id,
           role: 'user',
         })
-
-        setTimeout(() => {
-          router.replace('/login')
-        }, 3000)
+        console.log('[AuthCallback] inserted new user, redirecting...')
+        setTimeout(() => router.replace('/login'), 3000)
       } else {
+        console.log('[AuthCallback] existing user — redirecting to dashboard')
         router.replace('/dashboard')
       }
     }
