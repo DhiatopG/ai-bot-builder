@@ -1,41 +1,27 @@
-import { NextResponse } from 'next/server'
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
-export async function POST() {
-  const supabase = createServerComponentClient({ cookies })
+export async function GET() {
+  const cookieStore = await cookies() // <-- FIXED: added await ✅
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-
-  if (error || !user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { data: existingUser, error: checkError } = await supabase
-    .from('users')
-    .select('id')
-    .eq('email', user.email)
-    .maybeSingle()
-
-  if (checkError) {
-    return NextResponse.json({ error: 'Error checking user' }, { status: 500 })
-  }
-
-  if (!existingUser) {
-    const { error: insertError } = await supabase.from('users').insert({
-      email: user.email,
-      name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-      auth_id: user.id,
-      role: 'user',
-    })
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 400 })
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (key) => cookieStore.get(key)?.value ?? '',
+        set: async () => {},
+        remove: async () => {},
+      }
     }
+  )
+
+  const { data: { user }, error } = await supabase.auth.getUser()
+
+  if (error || !user) {
+    return NextResponse.json({ user: null, error }, { status: 401 })
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ user })
 }
