@@ -4,7 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/client';
+import { supabase } from '@/lib/client'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -62,12 +62,14 @@ export default function LoginPage() {
         .maybeSingle()
 
       if (!existing) {
-        await supabase.from('users').insert({
-          email: user.email,
-          name: user.user_metadata.full_name || user.user_metadata.name,
-          uuid: user.id,
-          auth_id: user.id,
-          role: 'user',
+        await fetch('/api/users/insert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: user.email,
+            name: user.user_metadata.full_name || user.user_metadata.name,
+            auth_id: user.id,
+          }),
         })
       }
     }
@@ -161,10 +163,21 @@ export default function LoginPage() {
       <footer className="bg-[#003366] text-white text-center py-6 mt-10">
         <p>© 2025 In60second</p>
         <p className="mt-2">
-          <Link href="/about" className="underline">About</Link> |{' '}
-          <Link href="/contact" className="underline">Contact</Link> |{' '}
-          <Link href="/privacy" className="underline">Privacy Policy</Link> |{' '}
-          <Link href="/terms" className="underline">Terms of Service</Link>
+          <Link href="/about" className="underline">
+            About
+          </Link>{' '}
+          |{' '}
+          <Link href="/contact" className="underline">
+            Contact
+          </Link>{' '}
+          |{' '}
+          <Link href="/privacy" className="underline">
+            Privacy Policy
+          </Link>{' '}
+          |{' '}
+          <Link href="/terms" className="underline">
+            Terms of Service
+          </Link>
         </p>
       </footer>
     </div>

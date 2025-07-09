@@ -53,10 +53,15 @@ export default function LoginForm() {
           .maybeSingle()
 
         if (!existing) {
-          await supabase.from('users').insert({
-            email: user.email,
-            name: user.user_metadata?.name || user.email,
-            auth_id: user.id,
+          // Use API route instead of direct insert:
+          await fetch('/api/users/insert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              name: user.user_metadata?.name || user.email,
+              auth_id: user.id,
+            }),
           })
         }
       }

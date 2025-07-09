@@ -8,46 +8,57 @@ export default function AuthCallbackPage() {
   const router = useRouter()
 
   useEffect(() => {
-    const handleAuthRedirect = async () => {
-      console.log('[AuthCallback] waiting for session...')
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    let called = false
 
-      if (sessionError) {
-        console.error('[AuthCallback] session error:', sessionError)
+    const processUser = async () => {
+      if (called) return
+      called = true
+
+      const {
+        data: { session },
+        error: sessionError
+      } = await supabase.auth.getSession()
+
+      if (!session || sessionError) {
+        console.error('[AuthCallback] ❌ Session failed:', sessionError)
         router.replace('/login')
         return
       }
 
-      const user = session?.user
-      console.log('[AuthCallback] session:', session)
+      const user = session.user
+      console.log('[AuthCallback] ✅ Session:', user)
 
-      if (!user) {
-        console.log('[AuthCallback] no user — redirecting to /login')
-        router.replace('/login')
-        return
-      }
-
-      console.log('[AuthCallback] inserting user...')
-      const { error: insertError } = await supabase.from('users').insert({
-        email: user.email,
-        name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-        auth_id: user.id,
-        role: 'user',
+      // Call internal insert API with trace header
+      const res = await fetch('/api/users/insert', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Origin': 'auth-callback-page'
+        },
+        body: JSON.stringify({
+          email: user.email,
+          name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+          auth_id: user.id
+        })
       })
 
-      if (insertError) {
-        console.warn('[AuthCallback] insert error:', insertError.message)
+      const json = await res.json()
+      console.log('[AuthCallback] 🧾 Insert response:', res.status, json)
+
+      if (!res.ok) {
+        router.replace('/login')
+        return
       }
 
-      router.replace('/login')
+      router.replace('/dashboard')
     }
 
-    handleAuthRedirect()
+    processUser()
   }, [router])
 
   return (
     <div className="p-10 text-center text-lg">
-      We’re creating your dashboard...<br />Please log in again in a few seconds.
+      We’re creating your dashboard...<br />Please wait a moment...
     </div>
   )
 }

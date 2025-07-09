@@ -56,12 +56,16 @@ export default function DashboardPage() {
               .maybeSingle()
 
             if (!existingUser) {
-              console.log("🆕 Creating user in 'users' table")
-              await supabase.from('users').insert({
-                email: user.email,
-                name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-                auth_id: user.id,
-              })
+  console.log("🆕 Creating user in 'users' table via API")
+  await fetch('/api/users/insert', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: user.email,
+      name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+      auth_id: user.id,
+    }),
+  })
 
               // ✅ Added welcome email
               try {
@@ -131,11 +135,15 @@ export default function DashboardPage() {
           .maybeSingle()
 
         if (!existingUser) {
-          console.log("🆕 Creating new user record...")
-          await supabase.from('users').insert({
-            email: user.email,
-            name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-            auth_id: user.id,
+          console.log("🆕 Creating new user record via API...")
+          await fetch('/api/users/insert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+              auth_id: user.id,
+            }),
           })
 
           // ✅ Added welcome email
