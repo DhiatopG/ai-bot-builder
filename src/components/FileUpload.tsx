@@ -25,7 +25,7 @@ export default function FileUpload({ bot_id }: Props) {
       {
         bot_id,
         file_name: file.name,
-        file_text: text
+        content: text
       }
     ])
 

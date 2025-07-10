@@ -18,6 +18,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
   const [visible, setVisible] = useState(true)
   const [logoUrl, setLogoUrl] = useState('')
   const [calendarUrl, setCalendarUrl] = useState('')
+  const [botName, setBotName] = useState('Assistant')
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const scrollToBottom = () => {
@@ -34,9 +35,10 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data } = await supabase.from('bots').select('logo_url, calendar_url').eq('id', botId).single()
+      const { data } = await supabase.from('bots').select('logo_url, calendar_url, bot_name').eq('id', botId).single()
       setLogoUrl(data?.logo_url || '')
       setCalendarUrl(data?.calendar_url || '')
+      setBotName(data?.bot_name || 'Assistant')
     }
     fetchData()
   }, [botId])
@@ -103,12 +105,25 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       return
     }
 
-    const res = await axios.post('/api/chat', {
-      question: userMessage,
-      user_id: botId,
-      name,
-      email,
-    })
+    // Get Supabase session and access token
+    const session = await supabase.auth.getSession()
+    const accessToken = session.data.session?.access_token
+
+    // Make API request with authorization header
+    const res = await axios.post(
+      '/api/chat',
+      {
+        question: userMessage,
+        user_id: botId,
+        name,
+        email,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    )
 
     const aiResponse = res.data?.answer || 'Sorry, I couldn’t find an answer.'
     setMessages((prev) => [...prev, { sender: 'bot', text: aiResponse }])
@@ -147,7 +162,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
               className="w-6 h-6 rounded-full border border-white"
             />
           )}
-          Assistant
+          {botName}
         </div>
         <button
           onClick={() => setVisible(false)}
@@ -175,7 +190,17 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
                 msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-green-600 text-white'
               }`}
             >
-              <div>{msg.text}</div>
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: msg.text.replace(
+                    /(https?:\/\/[^\s<>"')\]]+)/g,
+                    (rawUrl) => {
+                      const cleanedUrl = rawUrl.replace(/[.)\],]+$/, '')
+                      return `<a href="${cleanedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${cleanedUrl}</a>`
+                    }
+                  ),
+                }}
+              ></div>
               {msg.iframe && (
                 <iframe
                   src={msg.iframe}
