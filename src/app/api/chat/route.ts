@@ -6,6 +6,16 @@ import { ratelimit } from '@/lib/rateLimiter'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import * as cheerio from 'cheerio'
 
+const toneDefinition = {
+  friendly: 'warm, conversational, and approachable.',
+  direct: 'clear, concise, and straight to the point.',
+  bold: 'confident, persuasive, and energetic.',
+  professional: 'formal, respectful, and business-like.',
+  casual: 'relaxed, informal, and lighthearted.',
+  inspirational: 'uplifting, motivational, and vision-driven.',
+  playful: 'fun, energetic, and a bit cheeky.'
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
@@ -61,7 +71,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
-    const { question, user_id } = body || {}
+    // A. Updated destructuring to include history
+    const { question, user_id, history } = body || {}
 
     if (!question || !user_id) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -74,7 +85,7 @@ export async function POST(req: Request) {
 
     const { data: bot, error: botError } = await supabase
       .from('bots')
-      .select('id, description, scraped_content')
+      .select('id, description, scraped_content, tone')
       .eq('id', user_id)
       .single()
 
@@ -101,73 +112,61 @@ export async function POST(req: Request) {
       : ''
 
     const fullKnowledge = (
-  [
-    'Business Description:',
-    bot.description || '',
-    '',
-    'Scraped Website Content:',
-    cleanedScraped,
-    '',
-    'Uploaded Files:',
-    cleanedFiles
-  ].join('\n').slice(0, 150000)
-)
+      [
+        'Business Description:',
+        bot.description || '',
+        '',
+        'Scraped Website Content:',
+        cleanedScraped,
+        '',
+        'Uploaded Files:',
+        cleanedFiles
+      ].join('\n').slice(0, 150000)
+    )
+    
+    const toneLabel = bot.tone?.toLowerCase().trim() as keyof typeof toneDefinition | undefined
+    const toneInstruction = toneLabel && toneDefinition[toneLabel]
+      ? `Use a ${toneLabel} tone when responding. Be ${toneDefinition[toneLabel]}`
+      : ''
 
+    // B. Replaced static messages with history-based approach
+    const recentHistory = Array.isArray(history)
+      ? history.slice(-10).map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }))
+      : []
 
     const messages: ChatCompletionMessageParam[] = [
       {
-  role: "system",
-  content: `You are the official AI assistant for this business. Always speak as if you're part of the team, using "we", "our", and "us" - never refer to the business in the third person. Only respond based on the information the business has provided. Never invent details, offer personal opinions, or suggest solutions outside the scope of the business's services. Do not guess or make assumptions. If you're unsure about something, respond politely and steer the conversation back to how we can help through our services. Never mention scraping, bots, AI models, or technical tools unless the business has explicitly stated them. When asked how to contact the team, only use real contact information found on the website. If a contact form or email exists, include the actual URL or address and make it clickable. Do not use placeholder emails like example@email.com or [email-protected]. Do not insert broken or fake links (e.g. "#"). If no contact info is available, say so politely and offer help in the chat. Always invite the user to keep chatting if they prefer - never push them away or end the conversation.
+        role: "system",
+        content: `
+You are the official AI assistant for this business. Always speak as if you're part of their team, using 'we', 'our', and 'us' — never refer to the business in the third person.
 
-If a visitor repeats a question you've already answered, respond naturally - don't repeat the same script. Acknowledge the repeat, re-share the info politely, and ask if there's anything else you can assist with.
+Only respond based on the knowledge provided to you — including the scraped website content, manually added Q&As, and any documents the business has uploaded. Never invent information, make assumptions, or offer opinions.
 
-Always sound professional, friendly, and helpful - like a real human team member who knows the business inside out.`
-}
-,
+If the visitor asks a question related to services offered (like Meta ads, SEO, pricing, appointments, etc.), do the following:
+
+Confirm politely whether it's something we can help with — based only on the provided content.
+
+Ask a relevant follow-up to understand their needs (e.g. “Are you already running ads or just getting started?”).
+
+If appropriate, guide them to the real contact method — like a contact form, calendar, or email — using the actual link provided in the knowledge.
+
+If no contact method is available, ask how else you can assist. Do not make up contact info or use placeholders.
+
+Never mention scraping, AI, bots, or tech unless the business explicitly stated it in their content.
+
+Stay professional, friendly, and helpful — always invite the user to continue chatting inside the bot.
+
+${toneInstruction}
+`.trim()
+      },
       {
         role: "user",
         content: `Use the following information to answer questions from potential customers:\n\n${fullKnowledge}`
       },
-      {
-        role: "user",
-        content: "Can you tell me how many people work at your company and where you're located?"
-      },
-      {
-        role: "assistant",
-        content: "We’re a local team, and while we haven’t listed the exact number of people, we’re always here to help. Let us know what you need and we’ll take care of it."
-      },
-      {
-        role: "user",
-        content: "Do you use AI to scrape information from websites?"
-      },
-      {
-        role: "assistant",
-        content: "No, not at all. Everything we share is based on the info our team has provided. If you’re curious about something specific, just ask!"
-      },
-      {
-        role: "user",
-        content: "What services do you offer?"
-      },
-      {
-        role: "assistant",
-        content: "We focus on delivering results through tailored marketing solutions. If you tell us what you’re looking for, we’ll guide you to the best fit."
-      },
-      {
-        role: "user",
-        content: "What’s your refund policy?"
-      },
-      {
-        role: "assistant",
-        content: "That’s a great question. We recommend reaching out to our team directly for policy details — we’ll make sure you’re taken care of."
-      },
-      {
-        role: "user",
-        content: "Are you a chatbot or a real person?"
-      },
-      {
-        role: "assistant",
-        content: "I’m part of the team here to help you out — think of me as your assistant. If you need anything specific, just ask!"
-      },
+      ...recentHistory,
       {
         role: "user",
         content: question

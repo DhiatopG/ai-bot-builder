@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import * as cheerio from 'cheerio'
-import { scrapeBlogContent } from '@/lib/scrapeBlogContent' // ✅ added import
+import { scrapeBlogContent } from '@/lib/scrapeBlogContent'
+import { OpenAI } from 'openai'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // 🔒 Must use service role to upload to storage
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+})
 
 async function scrapeWebsiteContent(url: string): Promise<string> {
   const visited = new Set<string>()
@@ -27,16 +32,11 @@ async function scrapeWebsiteContent(url: string): Promise<string> {
     try {
       const res = await fetch(currentUrl)
       const contentType = res.headers.get('content-type') || ''
-
-      if (isPdf(currentUrl) && contentType.includes('application/pdf')) {
-        continue
-      }
-
+      if (isPdf(currentUrl) && contentType.includes('application/pdf')) continue
       if (!contentType.includes('text/html')) continue
 
       const html = await res.text()
       const $ = cheerio.load(html)
-
       const text = $('body').text().replace(/\s+/g, ' ').trim()
       combinedText += text + '\n'
 
@@ -63,14 +63,7 @@ async function scrapeWebsiteContent(url: string): Promise<string> {
 
 export async function POST(req: Request) {
   try {
-    let body
-    try {
-      body = await req.json()
-    } catch (err) {
-      console.error('❌ Invalid JSON:', err)
-      return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
-    }
-
+    const body = await req.json()
     const { userId, botName, businessInfo, qaPairs, logoUrl } = body || {}
 
     if (!userId || !botName || !businessInfo?.description) {
@@ -82,33 +75,88 @@ export async function POST(req: Request) {
 
     for (const url of urls) {
       try {
-        let content = '' // ✅ added logic
-        if (url.includes('/blog') || url.includes('/post')) {
+        let content = ''
+        const isBlogLike = (
+          url.includes('/blog') ||
+          url.includes('/post') ||
+          url.includes('/news') ||
+          url.includes('/stories') ||
+          url.includes('/updates') ||
+          url.match(/\b(blog|post|news|story|article|update|entry|insights)\b/i)
+        )
+
+        if (isBlogLike) {
+          console.log(`🔍 Using blog scraper for: ${url}`)
           content = await scrapeBlogContent(url)
         } else {
+          console.log(`🌐 Using cheerio website scraper for: ${url}`)
           content = await scrapeWebsiteContent(url)
+          if (content.trim().length < 200) {
+            console.log(`⚠️ Fallback to Puppeteer for weak content: ${url}`)
+            const fallback = await scrapeBlogContent(url)
+            if (fallback && fallback !== 'No blog content found.') {
+              content = fallback
+            }
+          }
         }
-        scrapedText += content + '\n'
+
+        if (!content || content.trim().length < 20) {
+          content = 'No blog content found.'
+        }
+
+        console.log(`✅ Scraped ${url}: ${content.length} characters`)
+        scrapedText += content + '\n\n'
       } catch (err) {
         console.error('❌ Failed scraping URL:', url, err)
       }
     }
 
+    const cleanedScraped = scrapedText.trim().slice(0, 150000)
+
+    // 🔍 Auto-analyze tone from scraped content
+    let detectedTone: string | null = null
+    try {
+      const tonePrompt = `
+Based on the following content, what is the overall communication tone used by the business?
+Choose only one label from this list: "friendly", "direct", "bold", "professional", "casual", "inspirational", "playful".
+Return just the label — no explanation.
+
+Content:
+${cleanedScraped.slice(0, 5000)}
+      `.trim()
+
+      const toneResponse = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: 'You are a tone classification assistant.' },
+          { role: 'user', content: tonePrompt }
+        ]
+      })
+
+      detectedTone = toneResponse.choices[0]?.message.content?.toLowerCase().trim() || null
+      console.log('🧠 Detected Tone:', detectedTone)
+    } catch (toneErr) {
+      console.error('❌ Tone detection failed:', toneErr)
+    }
+
     const finalLogoUrl = logoUrl || null
     const finalQaPairs = Array.isArray(qaPairs) ? qaPairs : []
 
-    const botData = {
+    const botData: any = {
       user_id: userId,
       bot_name: botName,
       description: businessInfo.description,
       urls: urls.join('\n'),
-      scraped_content: scrapedText.slice(0, 150000),
+      scraped_content: cleanedScraped,
       qa: finalQaPairs,
       logo_url: finalLogoUrl
     }
 
-    const { error } = await supabase.from('bots').insert([botData])
+    if (detectedTone) {
+      botData.tone = detectedTone
+    }
 
+    const { error } = await supabase.from('bots').insert([botData])
     if (error) {
       console.error('INSERT ERROR:', error.message)
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
