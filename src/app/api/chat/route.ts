@@ -208,9 +208,10 @@ ${toneInstruction}
           supabaseAdmin.from('chat_messages').insert({
             bot_id: botId,
             conversation_id: conversation_id,
-            user_id: user.id,
+            user_id: user_auth_id,
             role: msg.role,
             content: msg.content,
+            created_at: new Date().toISOString()
           })
         )
       )
