@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import { supabase } from '@/lib/supabase/browser'
+import type { User } from '@supabase/supabase-js'
 
 interface ChatLogicProps {
   botId: string
@@ -19,6 +20,8 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
   const [logoUrl, setLogoUrl] = useState('')
   const [calendarUrl, setCalendarUrl] = useState('')
   const [botName, setBotName] = useState('Assistant')
+  const [conversationId, setConversationId] = useState<string>('')
+  const [user, setUser] = useState<User | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const scrollToBottom = () => {
@@ -42,6 +45,28 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
     }
     fetchData()
   }, [botId])
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+    }
+
+    fetchUser()
+  }, [])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('conversation_id')
+      if (stored) {
+        setConversationId(stored)
+      } else {
+        const newId = crypto.randomUUID()
+        localStorage.setItem('conversation_id', newId)
+        setConversationId(newId)
+      }
+    }
+  }, [])
 
   const sendMessage = async (optionalInput?: string) => {
     const userMessage = optionalInput || input
@@ -105,11 +130,16 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       return
     }
 
-    // Get Supabase session and access token
+    const formattedHistory = messages
+      .filter(m => m.sender === 'user' || m.sender === 'bot')
+      .map(m => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }))
+
     const session = await supabase.auth.getSession()
     const accessToken = session.data.session?.access_token
 
-    // Make API request with authorization header
     const res = await axios.post(
       '/api/chat',
       {
@@ -117,6 +147,9 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
         user_id: botId,
         name,
         email,
+        history: formattedHistory,
+        user_auth_id: user?.id || null,
+        conversation_id: conversationId,
       },
       {
         headers: {
@@ -238,7 +271,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t p-3 bg-white flex gap-2">
+      <div className="border-t p极 p-3 bg-white flex gap-2">
         <input
           type="text"
           value={input}

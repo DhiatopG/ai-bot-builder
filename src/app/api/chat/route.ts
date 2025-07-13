@@ -42,12 +42,9 @@ export async function POST(req: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get: (key) => cookieStore.get(key)?.value || '',
-          set: async (key, value, options) => {
-            await cookieStore.set({ name: key, value, ...options })
-          },
-          remove: async (key, options) => {
-            await cookieStore.delete({ name: key, ...options })
+          getAll: () => cookieStore.getAll(),
+          setAll: async (cookies) => {
+            await Promise.all(cookies.map((cookie) => cookieStore.set(cookie)))
           },
         },
       }
@@ -71,8 +68,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
-    // A. Updated destructuring to include history
-    const { question, user_id, history } = body || {}
+    const { 
+      question, 
+      user_id, 
+      history, 
+      conversation_id,
+      user_auth_id 
+    } = body || {}
 
     if (!question || !user_id) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -129,7 +131,6 @@ export async function POST(req: Request) {
       ? `Use a ${toneLabel} tone when responding. Be ${toneDefinition[toneLabel]}`
       : ''
 
-    // B. Replaced static messages with history-based approach
     const recentHistory = Array.isArray(history)
       ? history.slice(-10).map((msg) => ({
           role: msg.role,
@@ -179,7 +180,42 @@ ${toneInstruction}
         messages
       })
 
-      return NextResponse.json({ answer: chat.choices[0].message.content })
+      const finalReply = chat.choices[0].message.content || ''
+
+      const supabaseAdmin = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+          cookies: {
+            getAll: () => cookieStore.getAll(),
+            setAll: async (cookies) => {
+              await Promise.all(cookies.map((cookie) => cookieStore.set(cookie)))
+            },
+          },
+        }
+      )
+
+      const botId = body.bot_id || body.user_id || ''
+      
+      const messagesToSave = [
+        ...recentHistory.slice(-13),
+        { role: 'user', content: question },
+        { role: 'assistant', content: finalReply },
+      ]
+
+      await Promise.all(
+        messagesToSave.map((msg) =>
+          supabaseAdmin.from('chat_messages').insert({
+            bot_id: botId,
+            conversation_id: conversation_id,
+            user_id: user.id,
+            role: msg.role,
+            content: msg.content,
+          })
+        )
+      )
+
+      return NextResponse.json({ answer: finalReply })
     } catch (err) {
       console.error('❌ OpenAI request failed:', err)
       return NextResponse.json({ error: 'AI request failed' }, { status: 500 })
