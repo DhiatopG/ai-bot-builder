@@ -1,6 +1,8 @@
-/* global console */
+/* eslint-env browser */
+
 (function () {
-  const userId = document.currentScript.getAttribute("data-user") || "demo-user";
+  const botId = document.currentScript.getAttribute("data-bot-id");
+  if (!botId) return;
 
   if (document.getElementById("my-bot-widget")) return;
 
@@ -17,12 +19,13 @@
   container.style.overflow = "hidden";
 
   const iframe = document.createElement("iframe");
-  iframe.src = `https://in60second.net/bot?uid=${userId}`;
+  iframe.src = `https://in60second.net/embed/bot?id=${botId}`;
   iframe.width = "100%";
   iframe.height = "100%";
   iframe.style.border = "0";
 
   iframe.onerror = function () {
+    // eslint-disable-next-line no-undef
     console.error("Bot iframe failed to load.");
     container.remove();
   };

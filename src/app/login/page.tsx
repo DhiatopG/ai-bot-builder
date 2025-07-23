@@ -14,6 +14,12 @@ export default function LoginPage() {
   const router = useRouter()
 
   const handleAuth = async () => {
+    // Add null check for supabase
+    if (!supabase) {
+      setError('Authentication service not available');
+      return;
+    }
+    
     if (!email || !password) {
       setError('Email and password required')
       return
@@ -50,6 +56,12 @@ export default function LoginPage() {
   }
 
   const insertUserIfNotExists = async () => {
+    // Add null check for supabase
+    if (!supabase) {
+      setError('Authentication service not available');
+      return;
+    }
+    
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -76,6 +88,12 @@ export default function LoginPage() {
   }
 
   const handleGitHubLogin = async () => {
+    // Add null check for supabase
+    if (!supabase) {
+      setError('Authentication service not available');
+      return;
+    }
+    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
       options: {
@@ -91,6 +109,12 @@ export default function LoginPage() {
   }
 
   const handleGoogleLogin = async () => {
+    // Add null check for supabase
+    if (!supabase) {
+      setError('Authentication service not available');
+      return;
+    }
+    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {

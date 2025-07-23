@@ -29,12 +29,19 @@ export default function LeadsPage() {
       setSession(data.session);
       const userEmail = data.session.user.email;
       if (userEmail) {
-        fetch(`/api/get-leads?user_id=${userEmail}`)
-          .then((res) => res.json())
-          .then((data) => {
-            setLeads(data.leads || []);
-            setLoading(false);
-          });
+        fetch('/api/lead', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ user_id: userEmail }),
+})
+  .then((res) => res.json())
+  .then((data) => {
+    setLeads(data.leads || []);
+    setLoading(false);
+  });
+
       }
     };
 

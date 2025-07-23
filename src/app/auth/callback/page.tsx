@@ -14,6 +14,13 @@ export default function AuthCallbackPage() {
       if (called) return
       called = true
 
+      // Add null check for supabase
+      if (!supabase) {
+        console.error('[AuthCallback] ❌ Supabase not initialized');
+        router.replace('/login');
+        return;
+      }
+
       const {
         data: { session },
         error: sessionError

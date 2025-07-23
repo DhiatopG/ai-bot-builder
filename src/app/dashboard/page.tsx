@@ -1,250 +1,48 @@
 'use client'
 
+import {
+  Home,
+  Bot,
+  Users,
+  Upload,
+  BarChart3,
+  Settings,
+  HelpCircle,
+  Menu,
+  X,
+  LogOut
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/client';
+import Link from 'next/link'
+import { supabase } from '@/lib/client'
 import toast from 'react-hot-toast'
-import type { AuthChangeEvent } from '@supabase/supabase-js'
-
-interface Bot {
-  id: string
-  bot_name: string
-  description: string
-  urls: string
-  nocodb_api_url?: string | null
-  nocodb_api_key?: string | null
-  nocodb_table?: string | null
-  calendar_url?: string | null
-  document_url?: string | null
-}
+import { useProtectedPage } from '@/hooks/useProtectedPage'
 
 export default function DashboardPage() {
-  console.log("🚀 DashboardPage loaded")
-  
   const router = useRouter()
-  const [checkingSession, setCheckingSession] = useState(true)
-  const [forceRedirect, setForceRedirect] = useState(false)
-  const [userId, setUserId] = useState('')
-  const [bots, setBots] = useState<Bot[]>([])
-  const [botName, setBotName] = useState('')
-  const [urls, setUrls] = useState('')
-  const [description, setDescription] = useState('')
-  const [questions, setQuestions] = useState('')
-  const [answers, setAnswers] = useState('')
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [, setSavingBotId] = useState<string | null>(null)
+  const { user, loading } = useProtectedPage()
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [bots, setBots] = useState<any[]>([])
 
   useEffect(() => {
-    console.log("🔍 useEffect started")
-
-    const checkSession = async () => {
-      for (let i = 0; i < 5; i++) {
-        try {
-          const { data, error } = await supabase.auth.getSession()
-          console.log(`⏳ Attempt ${i + 1}:`, data)
-
-          if (data?.session) {
-            const user = data.session.user
-            setUserId(user.id)
-
-            // ✅ Ensure user exists in Supabase DB
-            const { data: existingUser } = await supabase
-              .from('users')
-              .select('id')
-              .eq('email', user.email)
-              .maybeSingle()
-
-            if (!existingUser) {
-  console.log("🆕 Creating user in 'users' table via API")
-  await fetch('/api/users/insert', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: user.email,
-      name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-      auth_id: user.id,
-    }),
-  })
-
-              // ✅ Added welcome email
-              try {
-                await fetch('/api/send-welcome-email', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ email: user.email }),
-                })
-              } catch (err) {
-                console.error('❌ Failed to send welcome email', err)
-              }
-            }
-
-            await loadBots(user.id)
-            setCheckingSession(false)
-            return
-          }
-
-          if (error) {
-            console.error(`Error in attempt ${i+1}:`, error)
-          }
-        } catch (err) {
-          console.error(`Error in attempt ${i+1}:`, err)
-        }
-
-        await new Promise((res) => setTimeout(res, 500))
-      }
-
-      console.warn("❌ No session found after retries")
-
-      // 🔁 Final chance: maybe session is just late
-      const { data: userCheck } = await supabase.auth.getUser()
-      if (userCheck?.user) {
-        console.log("🟡 Session recovered at last second:", userCheck.user)
-        setUserId(userCheck.user.id)
-        loadBots(userCheck.user.id)
-        setCheckingSession(false)
-      } else {
-        const hasRedirected = sessionStorage.getItem('first_signup_redirect_done')
-        if (!hasRedirected) {
-          sessionStorage.setItem('first_signup_redirect_done', 'true')
-          setForceRedirect(true)
-          setTimeout(() => {
-            router.replace('/login')
-          }, 4000)
-          return
-        }
-
-        setCheckingSession(false)
-        router.replace('/')
-      }
-    }
-
-    checkSession()
-
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session) => {
-      console.log("🔁 onAuthStateChange:", event, session)
-
-      if (session && event === 'INITIAL_SESSION') {
-        const user = session.user
-        setUserId(user.id)
-
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', user.email)
-          .maybeSingle()
-
-        if (!existingUser) {
-          console.log("🆕 Creating new user record via API...")
-          await fetch('/api/users/insert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: user.email,
-              name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
-              auth_id: user.id,
-            }),
-          })
-
-          // ✅ Added welcome email
-          try {
-            await fetch('/api/send-welcome-email', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: user.email }),
-            })
-          } catch (err) {
-            console.error('❌ Failed to send welcome email', err)
-          }
-        }
-
-        await loadBots(user.id)
-        setCheckingSession(false)
-      }
-
-      if (event === 'SIGNED_OUT' || (!session && event === 'INITIAL_SESSION')) {
-        console.warn("🔒 Signed out or no session on initial load, redirecting to /")
-        setCheckingSession(false)
-        router.replace('/')
-      }
-    })
-
-    return () => {
-      listener.subscription.unsubscribe()
-    }
-  }, [router])
-
-  const loadBots = async (userId: string) => {
-    const { data } = await supabase.from('bots').select('*').eq('user_id', userId)
-    setBots(data || [])
-  }
-
-  const handleLaunch = async () => {
-    if (!botName || !description || !questions || !answers) {
-      toast.error('❌ Please fill in all required fields before launching a bot.');
-      return;
-    }
+    if (!user) return
     
-    let finalLogoUrl = null
-
-    if (logoFile) {
-      await supabase.auth.getSession()
-
-      const fileExt = logoFile.name.split('.').pop()
-      const fileName = `${crypto.randomUUID()}.${fileExt}`
-      const filePath = `logos/${fileName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('bot-logos')
-        .upload(filePath, logoFile, { upsert: true })
-
-      if (uploadError) {
-        console.error('Logo upload failed:', JSON.stringify(uploadError, null, 2))
-        toast.error(`❌ Upload failed: ${uploadError.message || 'unknown error'}`)
-        return
+    const loadBots = async () => {
+      // Add null check for supabase
+      if (!supabase) {
+        console.error('Supabase not initialized');
+        return;
       }
-
-      const { data: publicUrlData } = supabase.storage
-        .from('bot-logos')
-        .getPublicUrl(filePath)
-
-      finalLogoUrl = publicUrlData?.publicUrl || null
+      
+      const { data } = await supabase.from('bots').select('*').eq('user_id', user.id)
+      setBots(data || [])
     }
+    loadBots()
+  }, [user])
 
-    const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
-    const qaPairs = questions
-      .split('?')
-      .map((q, i) => ({
-        question: q.trim() + '?',  
-        answer: answers.split(',')[i]?.trim() || '',
-      }))
-      .filter((pair) => pair.question.length > 1)
-
-    const res = await fetch('/api/create-bot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,  
-        botName,  
-        businessInfo: { urls: urlList, description },  
-        qaPairs,
-        logoUrl: finalLogoUrl,
-      }),
-    })
-
-    const response = await res.json()
-    if (response.success) {
-      setBotName('')
-      setUrls('')
-      setDescription('')
-      setQuestions('')
-      setAnswers('')
-      setLogoFile(null)
-      loadBots(userId)
-      toast.success('✅ Bot created successfully.')
-    } else {
-      toast.error('❌ Failed to create bot.')
-    }
+  if (loading) {
+    return <div className="p-8">Loading your dashboard...</div>
   }
 
   const handleDelete = async (botId: string) => {
@@ -259,272 +57,223 @@ export default function DashboardPage() {
 
     if (res.ok) {
       setBots((prev) => prev.filter((b) => b.id !== botId))
-      toast.success('✅ Bot deleted.');
-    } else {
-      toast.error('❌ Failed to delete bot.');
     }
   }
 
   const handleLogout = async () => {
+    // Add null check for supabase
+    if (!supabase) {
+      console.error('Supabase not initialized');
+      return;
+    }
+    
     await supabase.auth.signOut()
     router.replace('/login')
   }
 
-  const updateNocoDB = async (bot: Bot) => {
-    if (!bot.nocodb_api_url || !bot.nocodb_api_key || !bot.nocodb_table) {
-      toast.error('❌ Fill all NocoDB fields before saving.');
-      return;
-    }
-
-    setSavingBotId(bot.id);
-    const res = await fetch(`/api/bots/${bot.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nocodb_api_url: bot.nocodb_api_url,
-        nocodb_api_key: bot.nocodb_api_key,
-        nocodb_table: bot.nocodb_table,
-      }),
-    });
-    setSavingBotId(null);
-
-    if (res.ok) {
-      toast.success('✅ NocoDB settings saved');
-      loadBots(userId);
-    } else {
-      toast.error('❌ Failed to save NocoDB settings');
-    }
-  };
-
-  const updateCalendar = async (bot: Bot) => {
-    if (!bot.calendar_url) {
-      toast.error('❌ Calendar URL is required');
-      return;
-    }
-
-    setSavingBotId(bot.id);
-    const res = await fetch(`/api/bots/${bot.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ calendar_url: bot.calendar_url }),
-    });
-    setSavingBotId(null);
-
-    if (res.ok) {
-      toast.success('✅ Calendar URL saved');
-      loadBots(userId);
-    } else {
-      toast.error('❌ Failed to save calendar URL');
-    }
-  };
-
-  const updateDocument = async (bot: Bot) => {
-    if (!bot.document_url) {
-      toast.error('❌ Document URL is required');
-      return;
-    }
-
-    setSavingBotId(bot.id);
-    const res = await fetch(`/api/bots/${bot.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ document_url: bot.document_url }),
-    });
-    setSavingBotId(null);
-
-    if (res.ok) {
-      toast.success('✅ Document URL saved');
-      loadBots(userId);
-    } else {
-      toast.error('❌ Failed to save document URL');
-    }
-  };
-
-  if (forceRedirect) {
-    return (
-      <div className="p-10 text-center text-lg">
-        We’re creating your dashboard...<br />Please log in again in a few seconds.
-      </div>
-    )
-  }
-
-  if (checkingSession) {
-    console.log("⏳ Still waiting for session...")
-    return <div className="p-10 text-center text-lg">Loading...</div>
-  }
+  const navItems = [
+    { icon: Home, label: 'Dashboard', path: '/dashboard' },
+    { icon: Bot, label: 'Bots', path: '/dashboard' },
+    { icon: Users, label: 'Leads', path: '/dashboard/leads' },
+    { icon: Upload, label: 'Upload', path: '/dashboard' },
+    { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
+    { icon: Bot, label: 'Integrations', path: '/dashboard/integrations' },
+    { icon: Settings, label: 'Settings', path: '/dashboard/settings', useLink: true },
+    { icon: HelpCircle, label: 'Help', path: '/dashboard' }
+  ]
 
   return (
-    <div className="bg-white text-[#333333] font-sans min-h-screen">
-      <header className="bg-[#003366] text-white p-4 shadow">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">  
-          <h1 className="text-xl font-bold">AI Bot Dashboard</h1>  
-          <div className="flex gap-4">  
-            <button onClick={() => router.push('/dashboard/leads')} className="bg-[#2ECC71] text-white px-4 py-2 rounded hover:bg-green-700">  
-              View Leads  
-            </button>  
-            <button onClick={handleLogout} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">  
-              Logout  
-            </button>  
-          </div>  
+    <div className="min-h-screen flex bg-white">
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#002D62] text-white flex flex-col transform transition-transform duration-300 ease-in-out ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <div className="p-6 border-b border-[#003875] flex items-center justify-between">
+          <h1 className="text-xl font-bold">BotBuilder Pro</h1>
+          <button
+            className="lg:hidden text-white hover:text-gray-300"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            <X size={24} />
+          </button>
         </div>
-      </header>
-      <div className="relative">
-        {!sidebarOpen && (  
-          <button onClick={() => setSidebarOpen(true)} className="absolute top-4 left-4 z-50 text-2xl font-bold text-[#003366]">☰</button>  
-        )}  
-        {sidebarOpen && (  
-          <div className="absolute top-0 left-0 w-64 h-screen bg-[#f9f9f9] shadow-xl p-6 z-40 border-r border-[#CCCCCC]">  
-            <div className="flex justify-between items-center mb-6">  
-              <h2 className="text-xl font-bold text-[#333333]">📋 Menu</h2>  
-              <button onClick={() => setSidebarOpen(false)} className="text-xl font-bold text-[#666666] hover:text-[#333333]">✕</button>  
-            </div>  
-            <ul className="space-y-4 text-left">  
-              <li>  
-                <button  
-                  onClick={() => router.push('/dashboard')}  
-                  className="w-full text-left px-3 py-2 rounded hover:bg-[#EEEEEE] text-[#333333] font-medium"  
-                >  
-                  🏠 Dashboard  
-                </button>  
-              </li>  
-              <li>  
-                <button  
-                  onClick={() => router.push('/dashboard/summary')}  
-                  className="w-full text-left px-3 py-2 rounded hover:bg-[#EEEEEE] text-[#333333] font-medium"  
-                >  
-                  📊 Daily Summary  
-                </button>  
-              </li>  
-              <li>  
-                <button  
-                  onClick={() => router.push('/dashboard/conversations')}  
-                  className="w-full text-left px-3 py-2 rounded hover:bg-[#EEEEEE] text-[#333333] font-medium"  
-                >  
-                  💬 Conversations  
-                </button>  
-              </li>  
-              <li>  
-                <button  
-                  onClick={() => router.push('/dashboard/upload')}  
-                  className="w-full text-left px-3 py-2 rounded hover:bg-[#EEEEEE] text-[#333333] font-medium"  
-                >  
-                  📎 Upload PDF  
-                </button>  
-              </li>  
-            </ul>  
-          </div>  
-        )}
-      </div>
-      <main className="max-w-7xl mx-auto p-6 space-y-10">
-        <section className="bg-[#F2F2F2] p-6 rounded-lg shadow-md space-y-4">  
-          <h2 className="text-lg font-semibold mb-4">Quick Launch</h2>  
-          <input type="text" placeholder="Bot Name" className="border border-[#CCCCCC] p-3 w-full rounded" value={botName} onChange={(e) => setBotName(e.target.value)} />  
-          <textarea placeholder="Website URLs (one per line)" className="border border-[#CCCCCC] p-3 w-full rounded" value={urls} onChange={(e) => setUrls(e.target.value)} />  
-          <textarea placeholder="Bot Description" className="border border-[#CCCCCC] p-3 w-full rounded" value={description} onChange={(e) => setDescription(e.target.value)} />  
-          <textarea placeholder="Questions (Q1? Q2?...)" className="border border-[#CCCCCC] p-3 w-full rounded" value={questions} onChange={(e) => setQuestions(e.target.value)} />  
-          <textarea placeholder="Answers (A1, A2,...)" className="border border-[#CCCCCC] p-3 w-full rounded" value={answers} onChange={(e) => setAnswers(e.target.value)} />  
-          <input type="file" accept="image/*" className="border border-[#CCCCCC] p-3 w-full rounded" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />  
-          <button onClick={handleLaunch} className="bg-[#2ECC71] text-white px-4 py-2 rounded hover:bg-green-600 w-full">  
-            Launch in 60 Seconds  
-          </button>  
-        </section>  
 
-        <section>  
-          <h3 className="text-md font-semibold mb-2">Your Bots</h3>  
-          {bots.length === 0 ? (  
-            <p className="text-[#999999]">No bots yet.</p>  
-          ) : (  
-            <ul className="space-y-6">  
-              {bots.map((bot) => (  
-                <li key={bot.id} className="bg-white border border-[#CCCCCC] rounded-lg p-4 shadow-sm">  
-                  <h4 className="font-bold text-lg mb-1 text-[#003366]">{bot.bot_name}</h4>  
-                  <p className="text-sm text-[#666666] mb-1">{bot.description}</p>  
-                  <p className="text-xs text-[#999999] mb-2">{bot.urls}</p>  
-                  <div className="bg-[#F9F9F9] p-2 text-sm font-mono rounded mb-2 break-all">  
-                    {`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`}  
-                  </div>  
-                  <div className="flex gap-2 mb-3">  
-                    <button className="text-xs px-3 py-1 bg-blue-600 text-white rounded" onClick={() => {
-                      navigator.clipboard.writeText(`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`);
-                      toast.success('✅ Embed script copied!');
-                    }}>  
-                      Copy Script  
-                    </button>  
-                    <button className="text-xs px-3 py-1 bg-red-600 text-white rounded" onClick={() => handleDelete(bot.id)}>  
-                      Delete  
-                    </button>  
+        <nav className="flex-1 p-4">
+          <ul className="space-y-2">
+            {navItems.map((item, i) => (
+              <li key={i}>
+                {item.useLink ? (
+                  <Link
+                    href={item.path}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-[#003875] hover:text-white transition-colors"
+                  >
+                    <item.icon size={20} />
+                    <span>{item.label}</span>
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false)
+                      router.push(item.path)
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-[#003875] hover:text-white transition-colors"
+                  >
+                    <item.icon size={20} />
+                    <span>{item.label}</span>
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div className="p-4 border-t border-[#003875]">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-8 h-8 bg-[#1E90FF] rounded-full flex items-center justify-center text-sm font-medium">
+              JD
+            </div>
+            <div>
+              <p className="text-sm font-medium">John Doe</p>
+              <p className="text-xs text-gray-400">john@company.com</p>
+            </div>
+          </div>
+          <button
+            className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-[#003875] hover:text-white transition-colors"
+            onClick={handleLogout}
+          >
+            <LogOut size={20} />
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col lg:ml-0">
+        <header className="bg-white border-b border-gray-200 px-4 lg:px-8 py-4 lg:py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="lg:hidden text-[#002D62] hover:text-[#1E90FF]"
+              >
+                <Menu size={24} />
+              </button>
+              <div>
+                <h1 className="text-2xl lg:text-3xl font-bold text-[#002D62]">
+                  Dashboard
+                </h1>
+                <p className="text-sm lg:text-base text-[#708090] mt-1">
+                  Manage your AI chatbots and monitor performance
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => router.push('/dashboard/create')}
+              className="bg-[#1E90FF] text-white px-3 lg:px-6 py-2 lg:py-3 rounded-lg text-sm lg:text-base hover:bg-[#1873CC] transition-colors"
+            >
+              Create New Bot
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 p-4 lg:p-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-6 lg:mb-8">
+            <div className="bg-white p-4 lg:p-6 rounded-lg shadow-sm border border-gray-100">
+              <p className="text-xs lg:text-sm text-[#708090] mb-1">Total Bots</p>
+              <div className="text-xl lg:text-2xl font-bold text-[#002D62]">{bots.length}</div>
+            </div>
+            <div className="bg-white p-4 lg:p-6 rounded-lg shadow-sm border border-gray-100">
+              <p className="text-xs lg:text-sm text-[#708090] mb-1">Active Conversations</p>
+              <div className="text-xl lg:text-2xl font-bold text-[#002D62]">--</div>
+            </div>
+            <div className="bg-white p-4 lg:p-6 rounded-lg shadow-sm border border-gray-100">
+              <p className="text-xs lg:text-sm text-[#708090] mb-1">Messages Today</p>
+              <div className="text-xl lg:text-2xl font-bold text-[#002D62]">--</div>
+            </div>
+            <div className="bg-white p-4 lg:p-6 rounded-lg shadow-sm border border-gray-100">
+              <p className="text-xs lg:text-sm text-[#708090] mb-1">Success Rate</p>
+              <div className="text-xl lg:text-2xl font-bold text-[#002D62]">--</div>
+            </div>
+          </div>
+
+          <div className="mb-4 lg:mb-6">
+            <h2 className="text-xl lg:text-2xl font-bold text-[#002D62] mb-2">
+              Your Bots
+            </h2>
+            <p className="text-sm lg:text-base text-[#708090]">
+              Manage and monitor your AI chatbots
+            </p>
+          </div>
+
+          {bots.length === 0 ? (
+            <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center text-[#708090]">
+              No bots created yet.
+            </div>
+          ) : (
+            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+              {bots.map((bot) => (
+                <li key={bot.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-1">{bot.bot_name}</h4>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Created {new Date(bot.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </p>
+                  <label className="block text-xs text-gray-500 mb-1">Embed Script</label>
+                  <div className="relative mb-4">
+                    <input
+                      readOnly
+                      value={`<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`}
+                      className="w-full text-xs border rounded px-3 py-2 pr-10 bg-gray-50 text-gray-700 font-mono"
+                    />
                     <button
-                      className="text-xs px-3 py-1 bg-green-600 text-white rounded"
-                      onClick={() => router.push(`/dashboard/bots/${bot.id}/test`)}
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          `<script src="https://in60second.net/embed.js" data-user="${bot.id}" defer></script>`
+                        )
+                        toast.success('✅ Embed script copied to clipboard!')
+                      }}
+                      className="absolute top-1/2 right-2 transform -translate-y-1/2 text-[11px] px-2 py-[2px] bg-gray-200 hover:bg-gray-300 text-gray-800 rounded"
                     >
-                      Test Bot
-                    </button>
-                  </div>  
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                    <input
-                      type="text"
-                      placeholder="NocoDB API URL"
-                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
-                      value={bot.nocodb_api_url ?? ''}
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_api_url: e.target.value } : b))}
-                    />
-                    <input
-                      type="text"
-                      placeholder="NocoDB API Key"
-                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
-                      value={bot.nocodb_api_key ?? ''}
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_api_key: e.target.value } : b))}
-                    />
-                    <input
-                      type="text"
-                      placeholder="NocoDB Table Name"
-                      className="p2 text-sm border border-[#CCCCCC] rounded w-full"
-                      value={bot.nocodb_table ?? ''}
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, nocodb_table: e.target.value } : b))}
-                    />
-                    <button 
-                      onClick={() => updateNocoDB(bot)} 
-                      className="bg-blue-600 text-white px-3 py-2 rounded w-full text-sm"
-                    >
-                      Save NocoDB
+                      Copy
                     </button>
                   </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <input
-                      type="text"
-                      placeholder="Calendar URL (optional)"
-                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
-                      value={bot.calendar_url ?? ''}
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, calendar_url: e.target.value } : b))}
-                    />
-                    <button 
-                      onClick={() => updateCalendar(bot)} 
-                      className="bg-purple-600 text-white px-3 py-2 rounded w-full text-sm"
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => router.push(`/dashboard/bots/${bot.id}/edit`)}
+                      className="px-4 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
                     >
-                      Save Calendar
+                      Edit
                     </button>
-                    <input
-                      type="text"
-                      placeholder="Document Upload URL (optional)"
-                      className="p-2 text-sm border border-[#CCCCCC] rounded w-full"
-                      value={bot.document_url ?? ''}
-                      onChange={(e) => setBots(bots.map(b => b.id === bot.id ? { ...b, document_url: e.target.value } : b))}
-                    />
-                    <button 
-                      onClick={() => updateDocument(bot)} 
-                      className="bg-teal-600 text-white px-3 py-2 rounded w-full text-sm"
+                    <button
+                      onClick={() => handleDelete(bot.id)}
+                      className="px-4 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded"
                     >
-                      Save Document URL
+                      Delete
                     </button>
-                  </div> 
-                </li>  
-              ))}  
-            </ul>  
-          )}  
-        </section>
-      </main>
+                    <button
+                      onClick={() => router.push(`/dashboard/bots/${bot.id}/test`)}
+                      className="px-4 py-1 text-sm bg-green-600 hover:bg-green-700 text-white rounded"
+                    >
+                      Open
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
+      </div>
     </div>
   )
-}  
+}

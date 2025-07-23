@@ -40,5 +40,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to save lead.', details: data }, { status: 500 })
   }
 
+  const { error: supabaseError } = await supabase.from('leads').insert([
+    {
+      name,
+      email,
+      user_id,
+      bot_id: user_id
+    }
+  ])
+
+  if (supabaseError) {
+    return NextResponse.json({ error: 'Lead saved to NocoDB but failed to insert into Supabase.', details: supabaseError }, { status: 500 })
+  }
+
   return NextResponse.json({ success: true, data })
 }
