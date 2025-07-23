@@ -1,3 +1,5 @@
+// src/app/api/users/insert/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -20,7 +22,7 @@ export async function POST(req: Request) {
   const source = req.headers.get('X-Origin')
   console.log('[InsertUserAPI] 📥 Request source:', source || 'Unknown')
 
-  // Check if user already exists (quoted for safety)
+  // Check if user already exists
   const { data: existingUser, error: checkError } = await supabase
     .from('users')
     .select('id')
@@ -45,7 +47,6 @@ export async function POST(req: Request) {
   const { error: insertError } = await supabase.from('users').insert({
     email,
     name,
-    uuid: auth_id,
     auth_id,
     role: 'user',
   })

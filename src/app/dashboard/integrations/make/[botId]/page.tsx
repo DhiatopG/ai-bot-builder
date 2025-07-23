@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { X } from 'lucide-react'
+import { supabase } from '@/lib/client' // ✅ your existing browser Supabase client
 
 export default function MakeIntegrationPage() {
   const { botId } = useParams()
@@ -14,9 +15,17 @@ export default function MakeIntegrationPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch(`/api/integrations/make?bot_id=${botId}`)
-        const data = await res.json()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
+        const res = await fetch(`/api/integrations/make?bot_id=${botId}`, {
+          headers: {
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+        })
+
+        const data = await res.json()
         if (data?.webhook_url) setWebhookUrl(data.webhook_url)
       } catch {
         toast.error('Failed to load webhook')
@@ -35,10 +44,17 @@ export default function MakeIntegrationPage() {
     }
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
       const res = await fetch('/api/integrations/make', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bot_id: botId, webhook_url: webhookUrl })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ bot_id: botId, webhook_url: webhookUrl }),
       })
 
       const result = await res.json()
@@ -57,7 +73,6 @@ export default function MakeIntegrationPage() {
 
   return (
     <div className="relative min-h-screen p-6 max-w-xl">
-      {/* X Close Button - top right of screen */}
       <button
         onClick={() => router.back()}
         className="fixed top-6 right-6 text-gray-500 hover:text-gray-700 transition cursor-pointer z-50"
