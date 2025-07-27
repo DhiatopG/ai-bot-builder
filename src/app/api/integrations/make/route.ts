@@ -15,7 +15,11 @@ export async function POST(req: Request) {
 
   const { bot_id, webhook_url } = await req.json()
 
-  // 🔍 Check if it’s the first time for this user + bot_id
+  if (!bot_id || !webhook_url) {
+    return NextResponse.json({ error: 'Missing bot_id or webhook_url' }, { status: 400 })
+  }
+
+  // 🔍 Check if a record already exists for this user+bot
   const { data: existing, error: fetchError } = await supabase
     .from('integrations_make')
     .select('id')
@@ -23,11 +27,14 @@ export async function POST(req: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
+  console.log('🧪 Make existing check:', existing)
+
   if (fetchError) {
-    return NextResponse.json({ error: fetchError.message }, { status: 500 })
+    console.error('❌ Failed to fetch existing Make integration:', fetchError)
+    return NextResponse.json({ error: 'Failed to fetch existing integration.' }, { status: 500 })
   }
 
-  // ⚡ Upsert the webhook
+  // ⚡ Upsert Make webhook config
   const { error: upsertError } = await supabase
     .from('integrations_make')
     .upsert(
@@ -40,10 +47,11 @@ export async function POST(req: Request) {
     )
 
   if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 500 })
+    console.error('❌ Upsert error:', upsertError)
+    return NextResponse.json({ error: 'Failed to save Make integration.' }, { status: 500 })
   }
 
-  // ✅ Send test webhook only on first insert
+  // ✅ Optional test webhook if this is a new insert
   if (!existing) {
     try {
       await fetch(webhook_url, {
@@ -60,8 +68,9 @@ export async function POST(req: Request) {
           }
         })
       })
+      console.log('✅ Test webhook sent to Make')
     } catch (err) {
-      console.error('Failed to send test webhook:', err)
+      console.error('❌ Failed to send test webhook:', err)
     }
   }
 
@@ -94,7 +103,8 @@ export async function GET(req: Request) {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('❌ Failed to fetch webhook:', error)
+    return NextResponse.json({ error: 'Failed to load Make webhook.' }, { status: 500 })
   }
 
   return NextResponse.json(data || {})

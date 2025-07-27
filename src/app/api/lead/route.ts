@@ -1,3 +1,4 @@
+// src/app/api/lead/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -7,51 +8,116 @@ const supabase = createClient(
 )
 
 export async function POST(req: Request) {
-  const { user_id, name, email } = await req.json()
+  const body = await req.json()
+  console.log("📥 Incoming request body:", body)
 
-  const { data: botData, error } = await supabase
-    .from('bots')
-    .select('nocodb_api_url, nocodb_api_key, nocodb_table')
-    .eq('id', user_id)
+  const { bot_id, name, email } = body
+
+  if (!bot_id || !name || !email) {
+    console.log("❌ Missing one or more fields:", { bot_id, name, email })
+    return NextResponse.json({ error: 'Missing name, email, or bot_id' }, { status: 400 })
+  }
+
+  const queryBotId = bot_id.toString().trim()
+  console.log("🔍 Searching for bot_id:", `"${queryBotId}"`)
+
+  // ---- Airtable logic ----
+  const { data: botData, error: configError } = await supabase
+    .from('integrations_airtable')
+    .select('api_key, base_id, table_name, bot_id')
+    .eq('bot_id', queryBotId)
+    .limit(1)
     .single()
 
-  if (error || !botData) {
-    return NextResponse.json({ error: 'Bot config not found.' }, { status: 400 })
-  }
+  console.log("📡 Supabase returned Airtable config:", { botData, configError })
 
-  const { nocodb_api_url, nocodb_api_key, nocodb_table } = botData
+  if (botData) {
+    const { api_key, base_id, table_name } = botData
+    const airtableUrl = `https://api.airtable.com/v0/${base_id}/${table_name}`
 
-  const res = await fetch(`${nocodb_api_url}/tables/${nocodb_table}/records`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'xc-token': nocodb_api_key
-    },
-    body: JSON.stringify({
-      Name: name,
-      Email: email,
-      user_id
+    console.log("📤 Sending to Airtable:", {
+      airtableUrl,
+      body: { Name: name, Email: email, BotID: bot_id }
     })
-  })
 
-  const data = await res.json()
+    const airtableRes = await fetch(airtableUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${api_key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          Name: name,
+          Email: email,
+          BotID: bot_id
+        }
+      })
+    })
 
-  if (!res.ok) {
-    return NextResponse.json({ error: 'Failed to save lead.', details: data }, { status: 500 })
+    const airtableData = await airtableRes.json()
+
+    if (!airtableRes.ok) {
+      console.log("❌ Airtable error:", airtableData)
+    } else {
+      console.log("✅ Lead sent to Airtable:", airtableData)
+    }
   }
 
+  // ---- Make.com logic ----
+  const { data: makeConfig, error: makeError } = await supabase
+    .from('integrations_make')
+    .select('webhook_url')
+    .eq('bot_id', queryBotId)
+    .maybeSingle()
+
+  console.log("🔁 Make config result:", makeConfig, makeError)
+
+  if (makeConfig?.webhook_url) {
+    console.log("📤 Sending to Make webhook:", makeConfig.webhook_url)
+
+    try {
+      const makeRes = await fetch(makeConfig.webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          email,
+          bot_id,
+          timestamp: new Date().toISOString()
+        })
+      })
+
+      if (!makeRes.ok) {
+        const makeErrorData = await makeRes.text()
+        console.error("❌ Make webhook error:", makeErrorData)
+      } else {
+        console.log("✅ Lead sent to Make webhook.")
+      }
+    } catch (err) {
+      console.error("❌ Error calling Make webhook:", err)
+    }
+  } else {
+    console.log("ℹ️ No Make webhook configured for this bot.")
+  }
+
+  // ---- Supabase insert ----
   const { error: supabaseError } = await supabase.from('leads').insert([
     {
       name,
       email,
-      user_id,
-      bot_id: user_id
+      bot_id
     }
   ])
 
   if (supabaseError) {
-    return NextResponse.json({ error: 'Lead saved to NocoDB but failed to insert into Supabase.', details: supabaseError }, { status: 500 })
+    console.log("⚠️ Supabase insert error:", supabaseError)
+    return NextResponse.json({
+      error: 'Lead saved to integrations but failed to insert into Supabase.',
+      details: supabaseError
+    }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, data })
+  console.log("✅ Lead saved to Supabase.")
+  return NextResponse.json({ success: true })
 }

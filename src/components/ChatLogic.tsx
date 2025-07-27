@@ -110,11 +110,19 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       setEmail(userMessage)
       setMessages((prev) => [...prev, { sender: 'bot', text: 'Thanks! Feel free to ask anything now.' }])
 
-      await axios.post('/api/lead', {
-        user_id: botId,
-        name: name || 'Anonymous',
+      // Modified block starts here
+      console.log("📤 Sending lead to /api/lead:", {
+        bot_id: botId,
+        name,
         email: userMessage,
-      })
+      });
+
+      await axios.post('/api/lead', {
+        bot_id: botId,
+        name,
+        email: userMessage,
+      })  
+      // Modified block ends here
 
       setStep(99)
       return
@@ -271,7 +279,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t p极 p-3 bg-white flex gap-2">
+      <div className="border-t p-3 bg-white flex gap-2">
         <input
           type="text"
           value={input}

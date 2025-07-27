@@ -1,40 +1,99 @@
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
-  const supabase = await createServerSupabaseClient()
-  const { bot_id, webhook_url } = await req.json()
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: async (name) => {
+            return (await cookies()).get(name)?.value
+          },
+          set: () => {},
+          remove: () => {},
+        },
+      }
+    )
 
-  const { error } = await supabase
-    .from('integrations_zapier')
-    .upsert({ bot_id, webhook_url }, { onConflict: 'bot_id' }) // ✅ fixed here
+    const body = await req.json()
+    const { bot_id, webhook_url } = body
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!bot_id || !webhook_url) {
+      return NextResponse.json({ error: 'Missing bot_id or webhook_url' }, { status: 400 })
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { error } = await supabase
+      .from('integrations_zapier')
+      .upsert(
+        {
+          bot_id,
+          webhook_url,
+          user_id: user.id,
+        },
+        { onConflict: 'bot_id' }
+      )
+
+    if (error) {
+      console.error('Supabase upsert error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    console.error('Unhandled error in POST /zapier:', err)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
-
-  return NextResponse.json({ success: true })
 }
 
 export async function GET(req: Request) {
-  const supabase = await createServerSupabaseClient()
-  const { searchParams } = new URL(req.url)
-  const bot_id = searchParams.get('bot_id')
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: async (name) => {
+            return (await cookies()).get(name)?.value
+          },
+          set: () => {},
+          remove: () => {},
+        },
+      }
+    )
 
-  if (!bot_id) {
-    return NextResponse.json({ error: 'Missing bot_id' }, { status: 400 })
+    const { searchParams } = new URL(req.url)
+    const bot_id = searchParams.get('bot_id')
+
+    if (!bot_id) {
+      return NextResponse.json({ error: 'Missing bot_id' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('integrations_zapier')
+      .select('webhook_url')
+      .eq('bot_id', bot_id)
+      .maybeSingle()
+
+    if (error) {
+      console.error('GET /zapier error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json(data || {})
+  } catch (err: any) {
+    console.error('Unhandled error in GET /zapier:', err)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
-
-  const { data, error } = await supabase
-    .from('integrations_zapier')
-    .select('webhook_url')
-    .eq('bot_id', bot_id)
-    .maybeSingle() // 👈 This allows 0 or 1 result safely
-
-  if (error) {
-    console.error('GET /api/integrations/zapier error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  return NextResponse.json(data || {}) // return empty object if no row
 }
