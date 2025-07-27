@@ -22,17 +22,19 @@ export async function POST(req: Request) {
   console.log("🔍 Searching for bot_id:", `"${queryBotId}"`)
 
   // ---- Airtable integration ----
-  const { data: botData, error: configError } = await supabase
+  const { data: airtableConfig, error: airtableError } = await supabase
     .from('integrations_airtable')
-    .select('api_key, base_id, table_name, bot_id')
+    .select('api_key, base_id, table_name')
     .eq('bot_id', queryBotId)
     .limit(1)
     .single()
 
-  console.log("📡 Supabase returned Airtable config:", { botData, configError })
+  if (airtableError) {
+    console.error("❌ Error fetching Airtable config:", airtableError)
+  }
 
-  if (botData) {
-    const { api_key, base_id, table_name } = botData
+  if (airtableConfig) {
+    const { api_key, base_id, table_name } = airtableConfig
     const airtableUrl = `https://api.airtable.com/v0/${base_id}/${table_name}`
 
     console.log("📤 Sending to Airtable:", {
@@ -64,8 +66,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // ---- Make.com webhook integration ----
-  console.log("🧪 Looking up Make webhook with bot_id:", queryBotId)
+  // ---- Make.com integration ----
   const { data: makeConfig, error: makeError } = await supabase
     .from('integrations_make')
     .select('webhook_url')
@@ -91,8 +92,8 @@ export async function POST(req: Request) {
       })
 
       if (!makeRes.ok) {
-        const makeErrorData = await makeRes.text()
-        console.error("❌ Make webhook error:", makeErrorData)
+        const errorText = await makeRes.text()
+        console.error("❌ Make webhook error:", errorText)
       } else {
         console.log("✅ Lead sent to Make webhook.")
       }
@@ -103,8 +104,8 @@ export async function POST(req: Request) {
     console.log("ℹ️ No Make webhook configured for this bot.")
   }
 
-  // ---- Supabase leads insert ----
-  const { error: supabaseError } = await supabase.from('leads').insert([
+  // ---- Save to Supabase leads table ----
+  const { error: insertError } = await supabase.from('leads').insert([
     {
       name,
       email,
@@ -112,11 +113,11 @@ export async function POST(req: Request) {
     }
   ])
 
-  if (supabaseError) {
-    console.log("⚠️ Supabase insert error:", supabaseError)
+  if (insertError) {
+    console.log("⚠️ Supabase insert error:", insertError)
     return NextResponse.json({
       error: 'Lead saved to integrations but failed to insert into Supabase.',
-      details: supabaseError
+      details: insertError
     }, { status: 500 })
   }
 
