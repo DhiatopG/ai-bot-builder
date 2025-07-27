@@ -26,7 +26,6 @@ export async function POST(req: Request) {
     .from('integrations_airtable')
     .select('api_key, base_id, table_name')
     .eq('bot_id', queryBotId)
-    .limit(1)
     .single()
 
   if (airtableError) {
@@ -71,10 +70,10 @@ export async function POST(req: Request) {
     .from('integrations_make')
     .select('webhook_url')
     .eq('bot_id', queryBotId)
-    .limit(1)
-    .single()
+    .maybeSingle()
 
-  console.log("🔁 Make config result:", makeConfig, makeError)
+  console.log("🔁 Make config:", makeConfig)
+  if (makeError) console.error("❌ Make config fetch error:", makeError)
 
   if (makeConfig?.webhook_url) {
     console.log("📤 Sending to Make webhook:", makeConfig.webhook_url)
