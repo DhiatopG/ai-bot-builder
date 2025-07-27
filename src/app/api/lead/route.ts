@@ -72,29 +72,37 @@ export async function POST(req: Request) {
     .eq('bot_id', queryBotId)
     .maybeSingle()
 
-  console.log("🔁 Make config:", makeConfig)
-  if (makeError) console.error("❌ Make config fetch error:", makeError)
+  if (makeError) {
+    console.error("❌ Error fetching Make config:", makeError)
+  }
+
+  console.log("🔁 Make config result:", makeConfig)
 
   if (makeConfig?.webhook_url) {
-    console.log("📤 Sending to Make webhook:", makeConfig.webhook_url)
+    const makePayload = {
+      name,
+      email,
+      bot_id,
+      timestamp: new Date().toISOString()
+    }
+
+    console.log("📤 Sending payload to Make:", JSON.stringify(makePayload, null, 2))
+    console.log("📤 Make webhook URL:", makeConfig.webhook_url)
 
     try {
       const makeRes = await fetch(makeConfig.webhook_url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          email,
-          bot_id,
-          timestamp: new Date().toISOString()
-        })
+        body: JSON.stringify(makePayload)
       })
 
+      const responseText = await makeRes.text()
+
       if (!makeRes.ok) {
-        const errorText = await makeRes.text()
-        console.error("❌ Make webhook error:", errorText)
+        console.error("❌ Make webhook responded with non-200:", makeRes.status)
+        console.error("❌ Make webhook error response:", responseText)
       } else {
-        console.log("✅ Lead sent to Make webhook.")
+        console.log("✅ Make webhook success response:", responseText)
       }
     } catch (err) {
       console.error("❌ Error calling Make webhook:", err)
