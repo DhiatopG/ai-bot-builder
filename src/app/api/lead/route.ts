@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   const queryBotId = bot_id.toString().trim()
   console.log("🔍 Searching for bot_id:", `"${queryBotId}"`)
 
-  // ---- Airtable logic ----
+  // ---- Airtable integration ----
   const { data: botData, error: configError } = await supabase
     .from('integrations_airtable')
     .select('api_key, base_id, table_name, bot_id')
@@ -64,12 +64,14 @@ export async function POST(req: Request) {
     }
   }
 
-  // ---- Make.com logic ----
+  // ---- Make.com webhook integration ----
+  console.log("🧪 Looking up Make webhook with bot_id:", queryBotId)
   const { data: makeConfig, error: makeError } = await supabase
     .from('integrations_make')
     .select('webhook_url')
     .eq('bot_id', queryBotId)
-    .maybeSingle()
+    .limit(1)
+    .single()
 
   console.log("🔁 Make config result:", makeConfig, makeError)
 
@@ -101,7 +103,7 @@ export async function POST(req: Request) {
     console.log("ℹ️ No Make webhook configured for this bot.")
   }
 
-  // ---- Supabase insert ----
+  // ---- Supabase leads insert ----
   const { error: supabaseError } = await supabase.from('leads').insert([
     {
       name,
