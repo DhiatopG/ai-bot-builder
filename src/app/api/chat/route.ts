@@ -50,14 +50,14 @@ export async function POST(req: Request) {
       }
     )
 
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser()
-
-    if (userError || !user?.email) {
-      console.error('❌ Supabase auth error or missing user:', userError)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let user = null
+    try {
+      const { data, error } = await supabase.auth.getUser()
+      if (error) console.warn('⚠️ Supabase auth error (proceeding anyway):', error)
+      user = data?.user || null
+    } catch (e) {
+      console.warn('⚠️ Supabase getUser() failed (probably public):', e)
+      user = null
     }
 
     let body
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     }
 
     console.log('------ DEBUG START ------')
-    console.log('SESSION EMAIL:', user.email)
+    console.log('SESSION EMAIL:', user?.email || '[public]')
     console.log('REQUEST BODY:', body)
     console.log('user_id:', user_id)
 
@@ -208,7 +208,7 @@ ${toneInstruction}
           supabaseAdmin.from('chat_messages').insert({
             bot_id: botId,
             conversation_id: conversation_id,
-            user_id: user_auth_id,
+            user_id: user_auth_id || null,
             role: msg.role,
             content: msg.content,
             created_at: new Date().toISOString()

@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { X } from 'lucide-react'
-import { supabase } from '@/lib/client' // ✅ your existing browser Supabase client
+import { supabase } from '@/lib/client'
 
 export default function MakeIntegrationPage() {
   const { botId } = useParams()
@@ -69,6 +69,39 @@ export default function MakeIntegrationPage() {
     }
   }
 
+  const handleTest = async () => {
+    if (!webhookUrl) {
+      toast.error('Webhook URL is required')
+      return
+    }
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bot_id: botId,
+          lead: {
+            name: 'in60second',
+            email: 'support@in60second.net',
+            message: 'This is a test lead from the dashboard.',
+          },
+        }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        toast.error(`Test failed: ${text}`)
+      } else {
+        toast.success('Test request sent successfully')
+      }
+    } catch {
+      toast.error('Test request failed')
+    }
+  }
+
   if (loading) return <p className="p-4">Loading...</p>
 
   return (
@@ -90,12 +123,22 @@ export default function MakeIntegrationPage() {
         className="w-full p-2 border rounded mb-4"
         required
       />
-      <button
-        onClick={handleSave}
-        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 cursor-pointer"
-      >
-        Save Webhook
-      </button>
+
+      <div className="flex gap-3">
+        <button
+          onClick={handleSave}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Save Webhook
+        </button>
+
+        <button
+          onClick={handleTest}
+          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+        >
+          Send Test Request
+        </button>
+      </div>
     </div>
   )
 }

@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const body = await req.json()
   console.log("📥 Incoming request body:", body)
 
-  const { bot_id, name, email } = body
+  const { bot_id, name, email, phone, message } = body
 
   if (!bot_id || !name || !email) {
     console.log("❌ Missing one or more fields:", { bot_id, name, email })
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   // ---- Make.com integration ----
   const { data: makeConfig, error: makeError } = await supabase
     .from('integrations_make')
-    .select('webhook_url')
+    .select('webhook_url, make_api_key')
     .eq('bot_id', queryBotId)
     .maybeSingle()
 
@@ -80,10 +80,21 @@ export async function POST(req: Request) {
 
   if (makeConfig?.webhook_url) {
     const makePayload = {
-      name,
-      email,
       bot_id,
-      timestamp: new Date().toISOString()
+      lead: {
+        name,
+        email,
+        phone: phone || '',
+        message: message || ''
+      }
+    }
+
+    const makeHeaders: Record<string, string> = {
+      'Content-Type': 'application/json'
+    }
+
+    if (makeConfig.make_api_key) {
+      makeHeaders['x-make-apikey'] = makeConfig.make_api_key
     }
 
     console.log("📤 Sending payload to Make:", JSON.stringify(makePayload, null, 2))
@@ -92,7 +103,7 @@ export async function POST(req: Request) {
     try {
       const makeRes = await fetch(makeConfig.webhook_url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: makeHeaders,
         body: JSON.stringify(makePayload)
       })
 
@@ -112,13 +123,11 @@ export async function POST(req: Request) {
   }
 
   // ---- Save to Supabase leads table ----
-  const { error: insertError } = await supabase.from('leads').insert([
-    {
-      name,
-      email,
-      bot_id
-    }
-  ])
+  const { error: insertError } = await supabase.from('leads').insert([{
+    name,
+    email,
+    bot_id
+  }])
 
   if (insertError) {
     console.log("⚠️ Supabase insert error:", insertError)
