@@ -13,7 +13,13 @@ export default function BotWidget({ botName = "AI Assistant", logoUrl }: BotWidg
   if (!show) return null
 
   return (
-    <div className="fixed bottom-4 right-4 w-[350px] max-w-[95%] h-[500px] max-h-[90vh] rounded-xl shadow-xl bg-white z-50 flex flex-col border border-gray-300">
+    <div
+      className="
+        fixed bottom-4 right-4 w-[350px] max-w-[95%] h-[500px] max-h-[90vh] 
+        rounded-xl shadow-xl bg-white z-50 flex flex-col border border-gray-300
+        sm:bottom-0 sm:right-0 sm:left-0 sm:top-0 sm:w-full sm:h-full sm:max-w-full sm:max-h-full sm:rounded-none
+      "
+    >
       {/* Close Button */}
       <button
         onClick={() => setShow(false)}
