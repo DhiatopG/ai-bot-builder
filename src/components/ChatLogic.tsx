@@ -6,11 +6,7 @@ import axios from 'axios'
 import { supabase } from '@/lib/supabase/browser'
 import type { User } from '@supabase/supabase-js'
 
-interface ChatLogicProps {
-  botId: string
-}
-
-export default function ChatLogic({ botId }: ChatLogicProps) {
+export default function useChatLogic(botId: string) {
   const [messages, setMessages] = useState<{ sender: string; text: string; buttons?: string[]; iframe?: string; link?: string }[]>([])
   const [input, setInput] = useState('')
   const [step, setStep] = useState(0)
@@ -22,6 +18,7 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
   const [botName, setBotName] = useState('Assistant')
   const [conversationId, setConversationId] = useState<string>('')
   const [user, setUser] = useState<User | null>(null)
+  const [isTyping, setIsTyping] = useState(false) // Added typing indicator state
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const scrollToBottom = () => {
@@ -110,19 +107,17 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       setEmail(userMessage)
       setMessages((prev) => [...prev, { sender: 'bot', text: 'Thanks! Feel free to ask anything now.' }])
 
-      // Modified block starts here
       console.log("📤 Sending lead to /api/lead:", {
         bot_id: botId,
         name,
         email: userMessage,
-      });
+      })
 
       await axios.post('/api/lead', {
         bot_id: botId,
         name,
         email: userMessage,
-      })  
-      // Modified block ends here
+      })
 
       setStep(99)
       return
@@ -138,165 +133,66 @@ export default function ChatLogic({ botId }: ChatLogicProps) {
       return
     }
 
-    const formattedHistory = messages
-      .filter(m => m.sender === 'user' || m.sender === 'bot')
-      .map(m => ({
-        role: m.sender === 'user' ? 'user' : 'assistant',
-        content: m.text,
-      }))
+    // Prepare for API call
+    setIsTyping(true)
+    
+    try {
+      const formattedHistory = messages
+        .filter(m => m.sender === 'user' || m.sender === 'bot')
+        .map(m => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text,
+        }))
 
-    const session = await supabase.auth.getSession()
-    const accessToken = session.data.session?.access_token
+      const session = await supabase.auth.getSession()
+      const accessToken = session.data.session?.access_token
 
-    const res = await axios.post(
-      '/api/chat',
-      {
-        question: userMessage,
-        user_id: botId,
-        name,
-        email,
-        history: formattedHistory,
-        user_auth_id: user?.id || null,
-        conversation_id: conversationId,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
+      const res = await axios.post(
+        '/api/chat',
+        {
+          question: userMessage,
+          user_id: botId,
+          name,
+          email,
+          history: formattedHistory,
+          user_auth_id: user?.id || null,
+          conversation_id: conversationId,
         },
-      }
-    )
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      )
 
-    const aiResponse = res.data?.answer || 'Sorry, I couldn’t find an answer.'
-    setMessages((prev) => [...prev, { sender: 'bot', text: aiResponse }])
+      const aiResponse = res.data?.answer || 'Sorry, I couldn’t find an answer.'
+      setMessages((prev) => [...prev, { sender: 'bot', text: aiResponse }])
+    } catch (error) {
+      console.error('Error sending message:', error)
+      setMessages((prev) => [...prev, { 
+        sender: 'bot', 
+        text: 'Sorry, I encountered an error. Please try again.' 
+      }])
+    } finally {
+      setIsTyping(false)
+    }
   }
 
-  if (!visible) {
-    return (
-      <div
-        className="fixed bottom-5 right-5 flex items-center gap-3 bg-white px-4 py-2 rounded-full shadow-lg cursor-pointer max-w-xs z-50"
-        onClick={() => setVisible(true)}
-      >
-        <div className="text-sm text-gray-800">Hi! How can I help you?</div>
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="Bot Logo"
-            className="w-10 h-10 rounded-full border border-gray-300"
-          />
-        ) : (
-          <button className="bg-green-600 text-white rounded-full w-10 h-10 flex items-center justify-center text-lg">
-            💬
-          </button>
-        )}
-      </div>
-    )
+  return {
+    messages,
+    setMessages,
+    input,
+    setInput,
+    sendMessage,
+    botName,
+    logoUrl,
+    visible,
+    setVisible,
+    calendarUrl,
+    conversationId,
+    name,
+    email,
+    messagesEndRef,
+    isTyping, // Added to return values
   }
-
-  return (
-    <div className="fixed bottom-5 right-5 w-full max-w-sm h-[80vh] bg-white shadow-xl rounded-2xl flex flex-col overflow-hidden z-50">
-      <div className="bg-green-600 text-white px-4 py-3 text-base font-bold flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          {logoUrl && (
-            <img
-              src={logoUrl}
-              alt="Bot Logo"
-              className="w-6 h-6 rounded-full border border-white"
-            />
-          )}
-          {botName}
-        </div>
-        <button
-          onClick={() => setVisible(false)}
-          className="text-white text-xl hover:text-gray-200"
-        >
-          ×
-        </button>
-      </div>
-
-      <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-white">
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex gap-2 items-start ${msg.sender === 'bot' ? 'self-start' : 'self-end'}`}
-          >
-            {msg.sender === 'bot' && logoUrl && (
-              <img
-                src={logoUrl}
-                alt="Bot Logo"
-                className="w-8 h-8 rounded-full border border-gray-300 mt-1"
-              />
-            )}
-            <div
-              className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap max-w-[75%] ${
-                msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-green-600 text-white'
-              }`}
-            >
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: msg.text.replace(
-                    /(https?:\/\/[^\s<>"')\]]+)/g,
-                    (rawUrl) => {
-                      const cleanedUrl = rawUrl.replace(/[.)\],]+$/, '')
-                      return `<a href="${cleanedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${cleanedUrl}</a>`
-                    }
-                  ),
-                }}
-              ></div>
-              {msg.iframe && (
-                <iframe
-                  src={msg.iframe}
-                  width="100%"
-                  height="300"
-                  style={{ border: 'none', marginTop: '10px', borderRadius: '8px' }}
-                />
-              )}
-              {msg.link && (
-                <a
-                  href={msg.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 underline block mt-2"
-                >
-                  Open Booking Page
-                </a>
-              )}
-              {msg.buttons && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {msg.buttons.map((btn, i) => (
-                    <button
-                      key={i}
-                      onClick={() => sendMessage(btn)}
-                      className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
-                    >
-                      {btn}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="border-t p-3 bg-white flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') sendMessage()
-          }}
-          placeholder="Type your message..."
-          className="flex-1 p-2 rounded-full border border-gray-300 text-sm outline-none"
-        />
-        <button
-          onClick={() => sendMessage()}
-          className="bg-green-600 text-white px-4 py-2 rounded-full text-sm"
-        >
-          Send
-        </button>
-      </div>
-    </div>
-  )
 }

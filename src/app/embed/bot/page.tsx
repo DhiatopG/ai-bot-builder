@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import ChatLogic from '@/components/ChatLogic'
+import BotWidget from '@/components/BotWidget'
 
 export default async function BotEmbedPage({ searchParams }: { searchParams: { id?: string } }) {
   const cookieStore = await cookies()
@@ -23,7 +23,7 @@ export default async function BotEmbedPage({ searchParams }: { searchParams: { i
 
   return (
     <div className="h-screen w-screen overflow-hidden">
-      <ChatLogic botId={bot.id} />
+      <BotWidget botId={botId} />
     </div>
   )
 }

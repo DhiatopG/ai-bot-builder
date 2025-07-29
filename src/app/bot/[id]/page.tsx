@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import ChatLogic from '@/components/ChatLogic'
+import BotWidget from '@/components/BotWidget'
 
 export default function BotPage() {
   const params = useParams()
@@ -12,7 +12,7 @@ export default function BotPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-black p-4">
       <div className="w-full max-w-md">
-        <ChatLogic botId={botId} />
+        <BotWidget botId={botId} />
       </div>
     </div>
   )
