@@ -1,6 +1,12 @@
 import puppeteer from 'puppeteer'
 
-export async function scrapeBlogContent(url: string): Promise<string> {
+export async function scrapeBlogContent(url: string): Promise<{
+  success: boolean;
+  source_url: string;
+  posts_scraped: number;
+  total_chars: number;
+  text: string;
+}> {
   const browser = await puppeteer.launch({ headless: true })
   const page = await browser.newPage()
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 })
@@ -124,5 +130,11 @@ export async function scrapeBlogContent(url: string): Promise<string> {
   console.log(`✅ Scraped ${fullContents.length} blog posts`)
   console.log(`🧠 Total scraped characters: ${result.length}`)
 
-  return result || 'No blog content found.'
+  return {
+    success: fullContents.length > 0,
+    source_url: url,
+    posts_scraped: fullContents.length,
+    total_chars: result.length,
+    text: result || 'No blog content found.'
+  }
 }

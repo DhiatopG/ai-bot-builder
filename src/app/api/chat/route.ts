@@ -5,6 +5,7 @@ import { cookies as nextCookies } from 'next/headers'
 import { ratelimit } from '@/lib/rateLimiter'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import * as cheerio from 'cheerio'
+import { searchRelevantChunks } from '@/lib/vector/searchRelevantChunks'
 
 const toneDefinition = {
   friendly: 'warm, conversational, and approachable.',
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
 
     const { data: bot, error: botError } = await supabase
       .from('bots')
-      .select('id, description, scraped_content, tone')
+      .select('id, description, tone')
       .eq('id', user_id)
       .single()
 
@@ -108,7 +109,10 @@ export async function POST(req: Request) {
       console.error('❌ File fetch error:', fileError)
     }
 
-    const cleanedScraped = cleanHtml(bot.scraped_content || '')
+    const chunks: { text: string }[] = await searchRelevantChunks(bot.id, question)
+    console.log("🔍 Chunks used in prompt:", chunks.map(c => c.text.slice(0, 80)))
+
+    const cleanedScraped = chunks.map((c) => c.text).join('\n\n---\n\n')
     const cleanedFiles = Array.isArray(fileData)
       ? fileData.map((f) => cleanHtml(f.content)).join('\n\n')
       : ''

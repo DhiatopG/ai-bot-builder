@@ -87,15 +87,16 @@ export async function POST(req: Request) {
 
         if (isBlogLike) {
           console.log(`🔍 Using blog scraper for: ${url}`)
-          content = await scrapeBlogContent(url)
+          const result = await scrapeBlogContent(url)
+          content = typeof result === 'string' ? result : result.text
         } else {
           console.log(`🌐 Using cheerio website scraper for: ${url}`)
           content = await scrapeWebsiteContent(url)
           if (content.trim().length < 200) {
             console.log(`⚠️ Fallback to Puppeteer for weak content: ${url}`)
             const fallback = await scrapeBlogContent(url)
-            if (fallback && fallback !== 'No blog content found.') {
-              content = fallback
+            if (typeof fallback === 'object' && fallback.text && fallback.text !== 'No blog content found.') {
+              content = fallback.text
             }
           }
         }
@@ -156,10 +157,27 @@ ${cleanedScraped.slice(0, 5000)}
       botData.tone = detectedTone
     }
 
-    const { error } = await supabase.from('bots').insert([botData])
+    const { data: insertedBots, error } = await supabase
+      .from('bots')
+      .insert([botData])
+      .select('id')
+
     if (error) {
       console.error('INSERT ERROR:', error.message)
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    }
+
+    const newBot = insertedBots?.[0]
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+      const embedRes = await fetch(`${baseUrl}/api/embed-chunks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_id: newBot.id })
+      })
+      console.log('📡 Embed-chunks response:', await embedRes.text())
+    } catch (embedErr) {
+      console.error('❌ Failed to call /api/embed-chunks:', embedErr)
     }
 
     return NextResponse.json({ success: true })

@@ -1,10 +1,10 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient as supabaseCreateServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export const createServerSupabaseClient = async () => {
   const cookieStore = await cookies() // ✅ Must use `await` in Next.js 15+
 
-  return createServerClient(
+  return supabaseCreateServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -16,3 +16,6 @@ export const createServerSupabaseClient = async () => {
     }
   )
 }
+
+// ✅ Export with original name to match imports in all routes
+export const createServerClient = createServerSupabaseClient

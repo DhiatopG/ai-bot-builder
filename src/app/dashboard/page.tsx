@@ -29,7 +29,6 @@ export default function DashboardPage() {
     if (!user) return
     
     const loadBots = async () => {
-      // Add null check for supabase
       if (!supabase) {
         console.error('Supabase not initialized');
         return;
@@ -61,7 +60,6 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    // Add null check for supabase
     if (!supabase) {
       console.error('Supabase not initialized');
       return;
@@ -73,7 +71,7 @@ export default function DashboardPage() {
 
   const navItems = [
     { icon: Home, label: 'Dashboard', path: '/dashboard' },
-    { icon: Bot, label: 'Bots', path: '/dashboard' },
+    { icon: Bot, label: 'Bots', path: '/dashboard/bots', useLink: true },
     { icon: Users, label: 'Leads', path: '/dashboard/leads' },
     { icon: Upload, label: 'Upload', path: '/dashboard' },
     { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
