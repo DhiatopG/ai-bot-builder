@@ -10,7 +10,8 @@ import {
   HelpCircle,
   Menu,
   X,
-  LogOut
+  LogOut,
+  Calendar
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -70,14 +71,15 @@ export default function DashboardPage() {
   }
 
   const navItems = [
-    { icon: Home, label: 'Dashboard', path: '/dashboard' },
-    { icon: Bot, label: 'Bots', path: '/dashboard/bots', useLink: true },
-    { icon: Users, label: 'Leads', path: '/dashboard/leads' },
-    { icon: Upload, label: 'Upload', path: '/dashboard' },
-    { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
-    { icon: Bot, label: 'Integrations', path: '/dashboard/integrations' },
-    { icon: Settings, label: 'Settings', path: '/dashboard/settings', useLink: true },
-    { icon: HelpCircle, label: 'Help', path: '/dashboard' }
+{ icon: Home, label: 'Dashboard', path: '/dashboard' },
+  { icon: Bot, label: 'Bots', path: '/dashboard/bots', useLink: true },
+  { icon: Users, label: 'Leads', path: '/dashboard/leads' },
+  { icon: Upload, label: 'Upload', path: '/dashboard/upload', useLink: true },
+  { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
+  { icon: Bot, label: 'Integrations', path: '/dashboard/integrations' },
+  { icon: Settings, label: 'Settings', path: '/dashboard/settings', useLink: true },
+  { icon: Calendar, label: 'Calendar', path: '/dashboard/calendar', useLink: true }, // ✅ this line is new
+  { icon: HelpCircle, label: 'Help', path: '/dashboard' }
   ]
 
   return (

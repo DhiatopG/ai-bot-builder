@@ -88,7 +88,9 @@ export default function BotWidget({ botId }: { botId: string }) {
               />
             )}
             <div
-              className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap max-w-[75%] ${
+              className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap ${
+                msg.iframe ? 'w-full max-w-full' : 'max-w-[75%]'
+              } ${
                 msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-blue-600 text-white'
               }`}
             >
@@ -108,8 +110,19 @@ export default function BotWidget({ botId }: { botId: string }) {
                 <iframe
                   src={msg.iframe}
                   width="100%"
-                  height="300"
-                  style={{ border: 'none', marginTop: '10px', borderRadius: '8px' }}
+                  height={
+                    /calendar|schedule|meeting|booking|calendly|tidycal|zoho|vcita|appointlet/i.test(msg.iframe)
+                      ? '600'
+                      : '300'
+                  }
+                  style={{
+                    border: 'none',
+                    marginTop: '10px',
+                    borderRadius: '8px',
+                    display: 'block',
+                    overflow: 'hidden',
+                  }}
+                  className="w-full"
                 />
               )}
 
@@ -164,15 +177,18 @@ export default function BotWidget({ botId }: { botId: string }) {
 
       {/* Input */}
       <div className="p-3 border-t bg-white flex gap-2">
-        <input
-          type="text"
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') sendMessage(undefined, weekday)
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              sendMessage(undefined, weekday)
+            }
           }}
           placeholder="Type your message..."
-          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150"
+          rows={1}
+          className="w-full resize-none overflow-hidden px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 max-h-40"
         />
         <button
           onClick={() => sendMessage(undefined, weekday)}
