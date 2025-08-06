@@ -1,93 +1,95 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase/browser'
+import { Bot, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
-interface Lead {
-  id: string;
-  user_id: string;
-  name: string;
-  email: string;
-  created_at: string;
-}
-
-export default function LeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState<any>(null);
-  const router = useRouter();
+export default function LeadsBotSelectorPage() {
+  const [bots, setBots] = useState<any[]>([])
+  const router = useRouter()
 
   useEffect(() => {
-    const fetchSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        router.replace('/login');
-        return;
-      }
+    const fetchBots = async () => {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const user = sessionData?.session?.user
+      if (!user) return
 
-      setSession(data.session);
-      const userEmail = data.session.user.email;
-      if (userEmail) {
-        fetch('/api/lead', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({ user_id: userEmail }),
-})
-  .then((res) => res.json())
-  .then((data) => {
-    setLeads(data.leads || []);
-    setLoading(false);
-  });
+      const { data } = await supabase.from('bots').select('*').eq('user_id', user.id)
+      setBots(data || [])
+    }
 
-      }
-    };
-
-    fetchSession();
-  }, [router]);
-
-  if (!session) return <p className="p-4 text-red-500">Access denied. Please log in.</p>;
+    fetchBots()
+  }, [])
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 p-6 max-w-4xl mx-auto relative">
-      <button
-        onClick={() => router.push('/dashboard')}
-        className="absolute top-4 right-4 text-gray-500 hover:text-red-500 text-xl font-bold"
-      >
-        ✕
-      </button>
+    <div className="min-h-screen bg-gray-50">
+      {/* Back Button */}
+      <div className="absolute top-6 left-6">
+        <button
+          onClick={() => router.back()}
+          className="fixed top-6 right-6 text-gray-500 hover:text-gray-700 transition cursor-pointer z-50"
+          aria-label="Go back"
+        >
+          <X className="w-6 h-6" />
+        </button>
+      </div>
 
-      <h1 className="text-2xl font-bold mb-4">Leads Captured</h1>
-      {loading ? (
-        <p className="text-gray-600">Loading leads...</p>
-      ) : leads.length === 0 ? (
-        <p className="text-gray-500">No leads yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white border border-gray-200">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="text-left p-2 border-b">Name</th>
-                <th className="text-left p-2 border-b">Email</th>
-                <th className="text-left p-2 border-b">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((lead) => (
-                <tr key={lead.id} className="border-b hover:bg-gray-50">
-                  <td className="p-2">{lead.name}</td>
-                  <td className="p-2">{lead.email}</td>
-                  <td className="p-2 text-sm text-gray-500">
-                    {new Date(lead.created_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Choose a bot to view captured leads
+            </h1>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Select from your active bots to manage and view all captured leads for each one.
+            </p>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Bot Cards */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className={`grid gap-6 ${
+          bots.length === 1
+            ? 'grid-cols-1 max-w-md mx-auto'
+            : bots.length === 2
+            ? 'grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto'
+            : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+        }`}>
+          {bots.map((bot) => (
+            <div
+              key={bot.id}
+              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all duration-200 hover:border-blue-200"
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center">
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-blue-100 text-blue-600">
+                    <Bot className="w-6 h-6" />
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-lg font-semibold text-gray-900">{bot.bot_name}</h3>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+                {bot.description || 'No description available.'}
+              </p>
+
+              <Link href={`/dashboard/leads/${bot.id}`}>
+                <button
+                  className="w-full py-3 px-4 rounded-lg font-semibold text-sm transition-all duration-200 bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg transform hover:-translate-y-0.5 cursor-pointer"
+                >
+                  Manage Leads
+                </button>
+              </Link>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
-  );
+  )
 }

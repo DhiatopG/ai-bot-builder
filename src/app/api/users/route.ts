@@ -1,25 +1,7 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies as nextCookies } from 'next/headers'
-import process from 'node:process'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function GET() {
-  const cookieStore = await nextCookies()
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: async (key) => (await cookieStore).get(key)?.value ?? '',
-        set: async (key, value, options) => {
-          ;(await cookieStore).set({ name: key, value, ...options })
-        },
-        remove: async (key, options) => {
-          ;(await cookieStore).delete({ name: key, ...options })
-        },
-      },
-    }
-  )
+  const supabase = await createServerClient()
 
   const {
     data: { user },

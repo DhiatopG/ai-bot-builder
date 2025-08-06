@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { OpenAI } from 'openai'
-import { createServerClient } from '@supabase/ssr'
-import { cookies as nextCookies } from 'next/headers'
+import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { ratelimit } from '@/lib/rateLimiter'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import * as cheerio from 'cheerio'
@@ -36,20 +36,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
     }
 
-    const cookieStore = await nextCookies()
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll: () => cookieStore.getAll(),
-          setAll: async (cookies) => {
-            await Promise.all(cookies.map((cookie) => cookieStore.set(cookie)))
-          },
-        },
-      }
-    )
+    const supabase = await createServerClient()
 
     let user = null
     try {
@@ -74,7 +61,8 @@ export async function POST(req: Request) {
       user_id, 
       history, 
       conversation_id,
-      user_auth_id 
+      user_auth_id,
+      is_after_hours
     } = body || {}
 
     if (!question || !user_id) {
@@ -142,6 +130,13 @@ export async function POST(req: Request) {
         }))
       : []
 
+    const businessStatusNote: ChatCompletionMessageParam[] = is_after_hours
+      ? [{
+          role: 'assistant',
+          content: "Note: Our office is currently closed, but I'm here to help you anyway.",
+        }]
+      : []
+
     const messages: ChatCompletionMessageParam[] = [
       {
         role: "system",
@@ -164,6 +159,8 @@ Never mention scraping, AI, bots, or tech unless the business explicitly stated 
 
 Stay professional, friendly, and helpful — always invite the user to continue chatting inside the bot.
 
+When answering, always highlight “what’s in it for the visitor” (WIIFM). Focus on how our services solve their problems, save them time, reduce stress, or help them grow. Frame responses in terms of benefits and outcomes — not just features or facts.
+
 ${toneInstruction}
 `.trim()
       },
@@ -172,6 +169,7 @@ ${toneInstruction}
         content: `Use the following information to answer questions from potential customers:\n\n${fullKnowledge}`
       },
       ...recentHistory,
+      ...businessStatusNote,
       {
         role: "user",
         content: question
@@ -180,24 +178,13 @@ ${toneInstruction}
 
     try {
       const chat = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages
       })
 
       const finalReply = chat.choices[0].message.content || ''
 
-      const supabaseAdmin = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-          cookies: {
-            getAll: () => cookieStore.getAll(),
-            setAll: async (cookies) => {
-              await Promise.all(cookies.map((cookie) => cookieStore.set(cookie)))
-            },
-          },
-        }
-      )
+      const supabaseAdmin = await createAdminClient()
 
       const botId = body.bot_id || body.user_id || ''
       

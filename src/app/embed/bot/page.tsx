@@ -1,14 +1,8 @@
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient } from '@/lib/supabase/server'
 import BotWidget from '@/components/BotWidget'
 
 export default async function BotEmbedPage({ searchParams }: { searchParams: { id?: string } }) {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: cookieStore }
-  )
+  const supabase = await createServerClient() // ✅ Uses shared helper
 
   const botId = searchParams.id
   if (!botId) return <div>Missing bot ID</div>

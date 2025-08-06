@@ -1,25 +1,8 @@
 import { NextResponse } from 'next/server'
-import { cookies as nextCookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
-  const cookieStore = await nextCookies()
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (key) => cookieStore.get(key)?.value ?? '',
-        set: async (key, value, options) => {
-          cookieStore.set({ name: key, value, ...options })
-        },
-        remove: async (key, options) => {
-          cookieStore.delete({ name: key, ...options })
-        },
-      },
-    }
-  )
+  const supabase = await createServerClient()
 
   const {
     data: { user },

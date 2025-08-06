@@ -1,29 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies as nextCookies } from 'next/headers'
+import { createServerClient } from '@/lib/supabase/server' // ✅ Use your helper
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(req: Request) {
-  const cookieStore = await nextCookies()
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (key) => cookieStore.get(key)?.value || '',
-        set: async (key, value, options) => {
-          await cookieStore.set({ name: key, value, ...options })
-        },
-        remove: async (key, options) => {
-          await cookieStore.delete({ name: key, ...options })
-        }
-      }
-    }
-  )
+  const supabase = await createServerClient()
 
   const {
-    data: { user }
+    data: { user },
   } = await supabase.auth.getUser()
 
   if (!user?.email) {
@@ -63,7 +46,7 @@ export async function POST(req: Request) {
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('knowledge-base')
     .upload(filename, buffer, {
-      contentType: file.type
+      contentType: file.type,
     })
 
   if (uploadError) {
@@ -76,8 +59,8 @@ export async function POST(req: Request) {
       file_name: file.name,
       file_path: uploadData?.path,
       file_type: file.type,
-      uploaded_at: new Date().toISOString()
-    }
+      uploaded_at: new Date().toISOString(),
+    },
   ])
 
   if (insertError) {

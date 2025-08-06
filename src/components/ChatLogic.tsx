@@ -18,7 +18,9 @@ export default function useChatLogic(botId: string) {
   const [botName, setBotName] = useState('Assistant')
   const [conversationId, setConversationId] = useState<string>('')
   const [user, setUser] = useState<User | null>(null)
-  const [isTyping, setIsTyping] = useState(false) // Added typing indicator state
+  const [isTyping, setIsTyping] = useState(false)
+  const [isBusinessClosed, setIsBusinessClosed] = useState(false)
+  const [notifiedClosed, setNotifiedClosed] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const scrollToBottom = () => {
@@ -35,10 +37,38 @@ export default function useChatLogic(botId: string) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data } = await supabase.from('bots').select('logo_url, calendar_url, bot_name').eq('id', botId).single()
-      setLogoUrl(data?.logo_url || '')
-      setCalendarUrl(data?.calendar_url || '')
-      setBotName(data?.bot_name || 'Assistant')
+      const { data: botData } = await supabase
+        .from('bots')
+        .select('logo_url, calendar_url, bot_name')
+        .eq('id', botId)
+        .single()
+
+      setLogoUrl(botData?.logo_url || '')
+      setCalendarUrl(botData?.calendar_url || '')
+      setBotName(botData?.bot_name || 'Assistant')
+
+      const { data: hoursData } = await supabase
+        .from('working_hours')
+        .select('*')
+        .eq('bot_id', botId)
+
+      const today = new Date()
+      const weekday = today.toLocaleDateString('en-US', { weekday: 'long' })
+      const todayHours = hoursData?.find(h => h.day === weekday)
+
+      if (!todayHours || todayHours.closed || !todayHours.start || !todayHours.end) {
+        setIsBusinessClosed(true)
+        return
+      }
+
+      const now = today.getHours() + today.getMinutes() / 60
+      const [startH, startM] = todayHours.start.split(':').map(Number)
+      const [endH, endM] = todayHours.end.split(':').map(Number)
+
+      const startTime = startH + startM / 60
+      const endTime = endH + endM / 60
+
+      setIsBusinessClosed(now < startTime || now > endTime)
     }
     fetchData()
   }, [botId])
@@ -65,7 +95,7 @@ export default function useChatLogic(botId: string) {
     }
   }, [])
 
-  const sendMessage = async (optionalInput?: string) => {
+  const sendMessage = async (optionalInput?: string, weekday?: string) => {
     const userMessage = optionalInput || input
     if (!userMessage.trim()) return
 
@@ -90,7 +120,15 @@ export default function useChatLogic(botId: string) {
         setMessages((prev) => [...prev, { sender: 'bot', text: 'What is your name?' }])
         setStep(2)
       } else {
-        setMessages((prev) => [...prev, { sender: 'bot', text: 'No problem! Feel free to ask anything.' }])
+        const followUpMessages = [{ sender: 'bot', text: 'No problem! Feel free to ask anything.' }]
+        if (isBusinessClosed && !notifiedClosed) {
+          followUpMessages.push({
+            sender: 'bot',
+            text: 'Our office is currently closed right now, but I’m here to help you anyway!',
+          })
+          setNotifiedClosed(true)
+        }
+        setMessages((prev) => [...prev, ...followUpMessages])
         setStep(99)
       }
       return
@@ -105,7 +143,15 @@ export default function useChatLogic(botId: string) {
 
     if (step === 3) {
       setEmail(userMessage)
-      setMessages((prev) => [...prev, { sender: 'bot', text: 'Thanks! Feel free to ask anything now.' }])
+      const postLeadMessages = [{ sender: 'bot', text: 'Thanks! Feel free to ask anything now.' }]
+      if (isBusinessClosed && !notifiedClosed) {
+        postLeadMessages.push({
+          sender: 'bot',
+          text: 'Our office is currently closed right now, but I’m here to help you anyway!',
+        })
+        setNotifiedClosed(true)
+      }
+      setMessages((prev) => [...prev, ...postLeadMessages])
 
       console.log("📤 Sending lead to /api/lead:", {
         bot_id: botId,
@@ -133,7 +179,6 @@ export default function useChatLogic(botId: string) {
       return
     }
 
-    // Prepare for API call
     setIsTyping(true)
     
     try {
@@ -157,6 +202,8 @@ export default function useChatLogic(botId: string) {
           history: formattedHistory,
           user_auth_id: user?.id || null,
           conversation_id: conversationId,
+          is_after_hours: isBusinessClosed,
+          weekday,
         },
         {
           headers: {
@@ -193,6 +240,6 @@ export default function useChatLogic(botId: string) {
     name,
     email,
     messagesEndRef,
-    isTyping, // Added to return values
+    isTyping,
   }
 }

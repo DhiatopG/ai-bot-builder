@@ -3,6 +3,8 @@
 import useChatLogic from './ChatLogic' // Adjust the path if needed
 
 export default function BotWidget({ botId }: { botId: string }) {
+  const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
+  
   const {
     messages,
     input,
@@ -167,13 +169,13 @@ export default function BotWidget({ botId }: { botId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') sendMessage()
+            if (e.key === 'Enter') sendMessage(undefined, weekday)
           }}
           placeholder="Type your message..."
           className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150"
         />
         <button
-          onClick={() => sendMessage()}
+          onClick={() => sendMessage(undefined, weekday)}
           className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-all duration-150 hover:scale-105"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">

@@ -1,22 +1,9 @@
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get: async (name) => {
-            return (await cookies()).get(name)?.value
-          },
-          set: () => {},
-          remove: () => {},
-        },
-      }
-    )
+    const supabase = await createServerClient()
 
     const body = await req.json()
     const { bot_id, webhook_url } = body
@@ -59,19 +46,7 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get: async (name) => {
-            return (await cookies()).get(name)?.value
-          },
-          set: () => {},
-          remove: () => {},
-        },
-      }
-    )
+    const supabase = await createServerClient()
 
     const { searchParams } = new URL(req.url)
     const bot_id = searchParams.get('bot_id')

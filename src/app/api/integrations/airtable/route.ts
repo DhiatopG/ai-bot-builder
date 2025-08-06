@@ -1,30 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createServerClient } from '@/lib/supabase/server' // ✅ Use shared helper
 
 export async function POST(req: Request) {
-  const cookieStore = await cookies() // ✅ Await here
+  const supabase = await createServerClient() // ✅ No cookieStore needed
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (key) => cookieStore.get(key)?.value ?? '',
-        set: async () => {},
-        remove: async () => {}
-      }
-    }
-  )
+  const { api_key, base_id, table_name } = await req.json()
 
   const {
-    api_key,
-    base_id,
-    table_name
-  } = await req.json()
-
-  const {
-    data: { user }
+    data: { user },
   } = await supabase.auth.getUser()
 
   if (!user) {
@@ -37,7 +20,7 @@ export async function POST(req: Request) {
       user_id: user.id,
       api_key,
       base_id,
-      table_name
+      table_name,
     })
 
   if (error) {

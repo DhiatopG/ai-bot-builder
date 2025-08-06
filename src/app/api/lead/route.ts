@@ -1,4 +1,3 @@
-// src/app/api/lead/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -97,9 +96,6 @@ export async function POST(req: Request) {
       makeHeaders['x-make-apikey'] = makeConfig.make_api_key
     }
 
-    console.log("📤 Sending payload to Make:", JSON.stringify(makePayload, null, 2))
-    console.log("📤 Make webhook URL:", makeConfig.webhook_url)
-
     try {
       const makeRes = await fetch(makeConfig.webhook_url, {
         method: 'POST',
@@ -122,11 +118,24 @@ export async function POST(req: Request) {
     console.log("ℹ️ No Make webhook configured for this bot.")
   }
 
+  // ✅ Get bot's user_id (for linking the lead)
+  const { data: botData, error: botError } = await supabase
+    .from('bots')
+    .select('user_id')
+    .eq('id', queryBotId)
+    .single()
+
+  if (botError || !botData) {
+    console.error("❌ Failed to fetch bot's user_id:", botError)
+  }
+
   // ---- Save to Supabase leads table ----
   const { error: insertError } = await supabase.from('leads').insert([{
     name,
     email,
-    bot_id
+    message: message || '',
+    bot_id,
+    user_id: botData?.user_id || null // ✅ add user_id if available
   }])
 
   if (insertError) {
