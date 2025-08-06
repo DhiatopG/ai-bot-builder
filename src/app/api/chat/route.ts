@@ -130,7 +130,36 @@ export async function POST(req: Request) {
         }))
       : []
 
-    const businessStatusNote: ChatCompletionMessageParam[] = is_after_hours
+    let detected_intent = ''
+    try {
+      const intentRes = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an intent detection system. Given a customer's message, detect their intent. Reply with one short keyword like:
+- "book_appointment"
+- "schedule_zoom"
+- "ask_price"
+- "business_hours"
+- "location"
+- "cancel"
+- "general_question"
+Do NOT explain. Just respond with the intent keyword only.`
+          },
+          { role: 'user', content: question }
+        ]
+      })
+      detected_intent = intentRes.choices[0].message.content?.trim().toLowerCase() || ''
+      console.log('🎯 DETECTED INTENT:', detected_intent)
+    } catch (err) {
+      console.warn('⚠️ Intent detection failed:', err)
+    }
+
+    const overrideAfterHours = ['book_appointment', 'schedule_zoom'].includes(detected_intent)
+    const showBusinessClosedNote = is_after_hours && !overrideAfterHours
+
+    const businessStatusNote: ChatCompletionMessageParam[] = showBusinessClosedNote
       ? [{
           role: 'assistant',
           content: "Note: Our office is currently closed, but I'm here to help you anyway.",
@@ -144,6 +173,8 @@ export async function POST(req: Request) {
 You are the official AI assistant for this business. Always speak as if you're part of their team, using 'we', 'our', and 'us' — never refer to the business in the third person.
 
 Only respond based on the knowledge provided to you — including the scraped website content, manually added Q&As, and any documents the business has uploaded. Never invent information, make assumptions, or offer opinions.
+
+Use the detected intent to guide your reply. The user's intent is: "${detected_intent}".
 
 If the visitor asks a question related to services offered (like Meta ads, SEO, pricing, appointments, etc.), do the following:
 
@@ -202,7 +233,8 @@ ${toneInstruction}
             user_id: user_auth_id || null,
             role: msg.role,
             content: msg.content,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            ...(msg.role === 'user' ? { intent: detected_intent } : {})
           })
         )
       )
