@@ -1,37 +1,51 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { createAdminClient } from '@/lib/supabase/admin'   // ✅ admin so RLS won’t block
 
 export async function POST(req: Request) {
-  const { user_id } = await req.json()
-  if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+  const admin = await createAdminClient()
+  const body = await req.json().catch(() => ({} as any))
+  const { user_id, bot_id } = body as { user_id?: string; bot_id?: string }
 
-  // Get all bots owned by this user
-  const { data: bots, error: botError } = await supabase
-    .from('bots')
-    .select('id')
-    .eq('user_id', user_id)
-
-  if (botError || !bots) {
-    return NextResponse.json({ error: 'Failed to fetch bots' }, { status: 500 })
+  if (!user_id && !bot_id) {
+    return NextResponse.json({ error: 'Provide user_id or bot_id' }, { status: 400 })
   }
 
-  const botIds = bots.map((b) => b.id)
+  try {
+    let leadsRes
 
-  // Fetch all leads linked to those bots
-  const { data: leads, error: leadError } = await supabase
-    .from('leads')
-    .select('*')
-    .in('bot_id', botIds)
-    .order('created_at', { ascending: false })
+    if (bot_id) {
+      // Per-bot view
+      leadsRes = await admin
+        .from('leads')
+        .select('*')
+        .eq('bot_id', bot_id)
+        .order('created_at', { ascending: false })
+    } else {
+      // Per-user view: get all bot IDs then fetch leads
+      const { data: bots, error: botErr } = await admin
+        .from('bots')
+        .select('id')
+        .eq('user_id', user_id!)
 
-  if (leadError) {
-    return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })
+      if (botErr) {
+        return NextResponse.json({ error: 'Failed to fetch bots' }, { status: 500 })
+      }
+
+      const botIds = (bots || []).map(b => b.id)
+      leadsRes = await admin
+        .from('leads')
+        .select('*')
+        .in('bot_id', botIds.length ? botIds : ['__none__'])
+        .order('created_at', { ascending: false })
+    }
+
+    if (leadsRes.error) {
+      return NextResponse.json({ error: leadsRes.error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ leads: leadsRes.data || [] })
+  } catch (_e) {
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
-
-  return NextResponse.json({ leads })
+  
 }

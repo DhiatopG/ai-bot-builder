@@ -1,21 +1,11 @@
-import { createServerClient as supabaseCreateServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+// /src/lib/supabase/admin.ts
+import { createClient } from '@supabase/supabase-js'
 
-export const createAdminClient = async () => {
-  const cookieStore = await cookies()
-
-  return supabaseCreateServerClient(
+// Service-role admin client (server-only). No cookies/session needed.
+export const createAdminClient = () =>
+  createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!, // 🔐 Service Role Key
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: async (newCookies) => {
-          newCookies.forEach((cookie) => {
-            cookieStore.set(cookie.name, cookie.value, cookie.options)
-          })
-        },
-      },
-    }
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
   )
-}
+

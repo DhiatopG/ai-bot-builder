@@ -7,11 +7,19 @@ import { supabase } from '@/lib/supabase/browser'
 import type { User } from '@supabase/supabase-js'
 
 export default function useChatLogic(botId: string) {
-  const [messages, setMessages] = useState<{ sender: string; text: string; buttons?: string[]; iframe?: string; link?: string }[]>([])
+  const [messages, setMessages] = useState<{
+    sender: string
+    text: string
+    buttons?: string[]
+    iframe?: string
+    link?: string
+    function_call?: {
+      name: string
+      arguments: string
+    }
+  }[]>([])
+
   const [input, setInput] = useState('')
-  const [step, setStep] = useState(0)
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [visible, setVisible] = useState(true)
   const [logoUrl, setLogoUrl] = useState('')
   const [calendarUrl, setCalendarUrl] = useState('')
@@ -20,8 +28,15 @@ export default function useChatLogic(botId: string) {
   const [user, setUser] = useState<User | null>(null)
   const [isTyping, setIsTyping] = useState(false)
   const [isBusinessClosed, setIsBusinessClosed] = useState(false)
-  const [notifiedClosed, setNotifiedClosed] = useState(false)
+  const [pendingCalendarLink, setPendingCalendarLink] = useState('')
+  const [pendingUserMsg, setPendingUserMsg] = useState('')
+  const [, setHasBooked] = useState(false) // eslint fix: ignore unused state value
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  const DEBUG =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).has('debug') ||
+      process.env.NEXT_PUBLIC_DEBUG_CHAT === '1')
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -78,109 +93,117 @@ export default function useChatLogic(botId: string) {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
     }
-
     fetchUser()
   }, [])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('conversation_id')
-      if (stored) {
-        setConversationId(stored)
+      let cid = localStorage.getItem('conversation_id')
+      if (cid) {
+        setConversationId(cid)
       } else {
-        const newId = crypto.randomUUID()
-        localStorage.setItem('conversation_id', newId)
-        setConversationId(newId)
+        cid = crypto.randomUUID()
+        localStorage.setItem('conversation_id', cid)
+        setConversationId(cid)
       }
+      const bookedFlag = localStorage.getItem(`has_booked:${cid}`)
+      if (bookedFlag === 'true') setHasBooked(true)
     }
   }, [])
+
+  const splitConsent = (text: string) => {
+    const m = text.match(/(Can I take your name[^?]*\?|Would you like to share your email[^?]*\?)/i)
+    if (!m) return { body: text, consent: null }
+    const consent = m[0].trim()
+    const body = text.replace(m[0], '').trim()
+    return { body, consent }
+  }
 
   const sendMessage = async (optionalInput?: string, weekday?: string) => {
     const userMessage = optionalInput || input
     if (!userMessage.trim()) return
 
-    setMessages((prev) => [...prev, { sender: 'user', text: userMessage }])
+    setMessages(prev => [...prev, { sender: 'user', text: userMessage }])
     setInput('')
 
-    if (step === 0) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: 'Can I ask for your name?',
-          buttons: ['Yes', 'No'],
-        },
-      ])
-      setStep(1)
-      return
-    }
+    if (userMessage === 'Open here' && pendingCalendarLink) {
+      setIsTyping(true)
+      try {
+        const formattedHistory = messages
+          .filter(m => m.sender === 'user' || m.sender === 'bot')
+          .map(m => ({
+            role: m.sender === 'user' ? 'user' : 'assistant',
+            content: m.text,
+          }))
+        const session2 = await supabase.auth.getSession()
+        const accessToken2 = session2.data.session?.access_token
+        const res2 = await axios.post(
+          '/api/chat',
+          {
+            question: pendingUserMsg || 'open calendar',
+            user_id: botId,
+            history: formattedHistory,
+            user_auth_id: user?.id || null,
+            conversation_id: conversationId,
+            is_after_hours: isBusinessClosed,
+            weekday,
+            force_embed: true,
+            debug: DEBUG,
+          },
+          { headers: { Authorization: `Bearer ${accessToken2}` } }
+        )
 
-    if (step === 1) {
-      if (userMessage.toLowerCase() === 'yes') {
-        setMessages((prev) => [...prev, { sender: 'bot', text: 'What is your name?' }])
-        setStep(2)
-      } else {
-        const followUpMessages = [{ sender: 'bot', text: 'No problem! Feel free to ask anything.' }]
-        if (isBusinessClosed && !notifiedClosed) {
-          followUpMessages.push({
-            sender: 'bot',
-            text: 'Our office is currently closed right now, but I’m here to help you anyway!',
+        if (DEBUG) {
+          console.log('api/chat reply (open here) →', {
+            debugId: res2.headers?.['x-debug-id'],
+            _debug: res2.data?._debug,
+            answer: res2.data?.answer,
           })
-          setNotifiedClosed(true)
         }
-        setMessages((prev) => [...prev, ...followUpMessages])
-        setStep(99)
+
+        if (res2.data?.booking_completed) {
+          setHasBooked(true)
+          localStorage.setItem(`has_booked:${conversationId}`, 'true')
+        }
+
+        const aiResponse2 = res2.data?.answer || ''
+        const ctas2 = Array.isArray(res2.data?.ctas) ? res2.data.ctas : []
+        if (aiResponse2) {
+          const { body, consent } = splitConsent(aiResponse2)
+          const pieces: typeof messages = []
+          if (body) pieces.push({ sender: 'bot', text: body })
+          if (consent) pieces.push({ sender: 'bot', text: consent })
+          if (ctas2.length) pieces.push({ sender: 'bot', text: '', buttons: ctas2.map((c: any) => c.label) })
+          if (pieces.length) {
+            setMessages(prev => [...prev, ...pieces])
+          } else {
+            setMessages(prev => [...prev, { sender: 'bot', text: aiResponse2 }])
+          }
+        }
+
+        if (res2.data?.iframe) {
+          setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: res2.data.iframe }])
+        } else if (res2.data?.calendar_link) {
+          setMessages(prev => [...prev, { sender: 'bot', text: 'You can book using this link:', link: res2.data.calendar_link }])
+        }
+      } catch (_e) {
+        setMessages(prev => [...prev, { sender: 'bot', text: 'Sorry, I encountered an error. Please try again.' }])
+      } finally {
+        setPendingCalendarLink('')
+        setPendingUserMsg('')
+        setIsTyping(false)
       }
       return
     }
 
-    if (step === 2) {
-      setName(userMessage)
-      setMessages((prev) => [...prev, { sender: 'bot', text: 'Thanks! Can I have your email?' }])
-      setStep(3)
-      return
-    }
-
-    if (step === 3) {
-      setEmail(userMessage)
-      const postLeadMessages = [{ sender: 'bot', text: 'Thanks! Feel free to ask anything now.' }]
-      if (isBusinessClosed && !notifiedClosed) {
-        postLeadMessages.push({
-          sender: 'bot',
-          text: 'Our office is currently closed right now, but I’m here to help you anyway!',
-        })
-        setNotifiedClosed(true)
-      }
-      setMessages((prev) => [...prev, ...postLeadMessages])
-
-      console.log("📤 Sending lead to /api/lead:", {
-        bot_id: botId,
-        name,
-        email: userMessage,
-      })
-
-      await axios.post('/api/lead', {
-        bot_id: botId,
-        name,
-        email: userMessage,
-      })
-
-      setStep(99)
-      return
-    }
-
-    if (userMessage.toLowerCase().includes('book') && calendarUrl) {
-      const isIframe = calendarUrl.includes('calendly.com') || calendarUrl.includes('tidio') || calendarUrl.includes('hubspot')
-      if (isIframe) {
-        setMessages((prev) => [...prev, { sender: 'bot', text: 'You can book here:', iframe: calendarUrl }])
-      } else {
-        setMessages((prev) => [...prev, { sender: 'bot', text: 'You can book using this link:', link: calendarUrl }])
-      }
+    if (userMessage === 'Open in new tab' && pendingCalendarLink) {
+      setMessages(prev => [...prev, { sender: 'bot', text: 'Open Booking Page:', link: pendingCalendarLink }])
+      setPendingCalendarLink('')
+      setPendingUserMsg('')
       return
     }
 
     setIsTyping(true)
-    
     try {
       const formattedHistory = messages
         .filter(m => m.sender === 'user' || m.sender === 'bot')
@@ -197,29 +220,63 @@ export default function useChatLogic(botId: string) {
         {
           question: userMessage,
           user_id: botId,
-          name,
-          email,
           history: formattedHistory,
           user_auth_id: user?.id || null,
           conversation_id: conversationId,
           is_after_hours: isBusinessClosed,
           weekday,
+          debug: DEBUG,
         },
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       )
 
+      if (DEBUG) {
+        console.log('api/chat reply →', {
+          debugId: res.headers?.['x-debug-id'],
+          _debug: res.data?._debug,
+          answer: res.data?.answer,
+        })
+      }
+
+      if (res.data?.booking_completed) {
+        setHasBooked(true)
+        localStorage.setItem(`has_booked:${conversationId}`, 'true')
+      }
+
       const aiResponse = res.data?.answer || 'Sorry, I couldn’t find an answer.'
-      setMessages((prev) => [...prev, { sender: 'bot', text: aiResponse }])
+      const ctas = Array.isArray(res.data?.ctas) ? res.data.ctas : []
+
+      const { body, consent } = splitConsent(aiResponse)
+      const pieces: typeof messages = []
+      if (body) pieces.push({ sender: 'bot', text: body })
+      if (consent) pieces.push({ sender: 'bot', text: consent })
+      if (ctas.length) pieces.push({ sender: 'bot', text: '', buttons: ctas.map((c: any) => c.label) })
+
+      if (pieces.length) {
+        setMessages(prev => [...prev, ...pieces])
+      } else {
+        setMessages(prev => [...prev, { sender: 'bot', text: aiResponse }])
+      }
+
+      if (res.data?.need_calendar_confirm && res.data?.calendar_link) {
+        setPendingCalendarLink(res.data.calendar_link)
+        setPendingUserMsg(userMessage)
+        setMessages(prev => [...prev, { sender: 'bot', text: 'Open the calendar here?', buttons: ['Open here', 'Open in new tab'] }])
+        setIsTyping(false)
+        return
+      }
+
+      if (res.data?.iframe) {
+        setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: res.data.iframe }])
+      } else if (res.data?.calendar_link) {
+        setMessages(prev => [...prev, { sender: 'bot', text: 'You can book using this link:', link: res.data.calendar_link }])
+      }
+      if (res.data?.link && !res.data?.calendar_link) {
+        setMessages(prev => [...prev, { sender: 'bot', text: 'Open this page:', link: res.data.link }])
+      }
     } catch (error) {
       console.error('Error sending message:', error)
-      setMessages((prev) => [...prev, { 
-        sender: 'bot', 
-        text: 'Sorry, I encountered an error. Please try again.' 
-      }])
+      setMessages(prev => [...prev, { sender: 'bot', text: 'Sorry, I encountered an error. Please try again.' }])
     } finally {
       setIsTyping(false)
     }
@@ -237,8 +294,6 @@ export default function useChatLogic(botId: string) {
     setVisible,
     calendarUrl,
     conversationId,
-    name,
-    email,
     messagesEndRef,
     isTyping,
   }

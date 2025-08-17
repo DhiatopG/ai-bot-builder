@@ -1,12 +1,14 @@
 'use client'
 
-import useChatLogic from './ChatLogic' // Adjust the path if needed
+import { useEffect, useRef, useState } from 'react' // ⬅️ added useRef
+import useChatLogic from './ChatLogic'
 
 export default function BotWidget({ botId }: { botId: string }) {
   const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
   
   const {
     messages,
+    setMessages,
     input,
     setInput,
     sendMessage,
@@ -15,8 +17,191 @@ export default function BotWidget({ botId }: { botId: string }) {
     visible,
     setVisible,
     messagesEndRef,
-    isTyping, // Added typing indicator
+    isTyping,
   } = useChatLogic(botId)
+
+  // ⬇️ NEW: keep track of which iframe src we already announced (success/fallback/close/nudge)
+  const announcedIframesRef = useRef<Set<string>>(new Set())
+  // ⬇️ NEW: track manual close per src so it stays hidden if component re-mounts
+  const closedIframesRef = useRef<Set<string>>(new Set())
+
+  // ⬇️ UPDATED: gate the fallback note so it shows only once per src
+  const convertIframeToLink = (index: number) => {
+    setMessages(m => {
+      const src = (m as any)[index]?.iframe || ''
+      const alreadyNotified = announcedIframesRef.current.has(`fail:${src}`)
+      const updated = (m as any).map((msg: any, i: number) =>
+        i === index && msg.iframe
+          ? { ...msg, text: 'Booking opens in a new tab:', link: msg.iframe, iframe: undefined }
+          : msg
+      )
+      if (!alreadyNotified && src) {
+        announcedIframesRef.current.add(`fail:${src}`)
+        return [
+          ...updated,
+          { sender: 'bot', text: 'Looks like the provider blocks embedding, so I opened the booking page in a new tab.' }
+        ]
+      }
+      return updated
+    })
+  }
+
+  // ⬇️ NEW: one-time email nudge helper
+  const pushEmailNudgeOnce = (src: string) => {
+    if (!src) return
+    const key = `nudge:${src}`
+    if (announcedIframesRef.current.has(key)) return
+    announcedIframesRef.current.add(key)
+    setMessages((prev: any[]) => [
+      ...prev,
+      {
+        sender: 'bot',
+        text: "Didn't find a time? I can email you the first openings and a quick estimate.",
+        buttons: ['Email me times & estimate']
+      }
+    ])
+  }
+
+  // ⬇️ NEW: closable + idle-nudge iframe bubble for msg.iframe
+  function EmbedBubble({ src, idx }: { src: string; idx: number }) {
+    const [loaded, setLoaded] = useState(false)
+    const [visibleCard, setVisibleCard] = useState(!closedIframesRef.current.has(src))
+
+    useEffect(() => {
+      if (!visibleCard) return
+      // fallback: if not loaded in 4s, convert to link
+      const tFallback = setTimeout(() => {
+        if (!loaded) convertIframeToLink(idx)
+      }, 4000)
+
+      // recovery nudge after 90s if still visible (assume no booking yet)
+      const tNudge = setTimeout(() => {
+        if (visibleCard) pushEmailNudgeOnce(src)
+      }, 90_000)
+
+      return () => {
+        clearTimeout(tFallback)
+        clearTimeout(tNudge)
+      }
+    }, [loaded, idx, visibleCard, src])
+
+    if (!visibleCard) return null
+
+    return (
+      <div className="relative mt-2">
+        {/* Close button */}
+        <button
+          aria-label="Close calendar"
+          className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
+          onClick={() => {
+            setVisibleCard(false)
+            closedIframesRef.current.add(src)
+            pushEmailNudgeOnce(src)
+          }}
+        >
+          × Close
+        </button>
+
+        <iframe
+          src={src}
+          width="100%"
+          height={
+            /calendar|schedule|meeting|booking|calendly|tidycal|zoho|vcita|appointlet|cal\.com|youcanbook/i.test(src)
+              ? '600'
+              : '300'
+          }
+          style={{
+            border: 'none',
+            marginTop: '10px',
+            borderRadius: '8px',
+            display: 'block',
+            overflow: 'hidden',
+          }}
+          className="w-full"
+          allow="clipboard-write; fullscreen"
+          onLoad={() => {
+            if (!loaded) {
+              setLoaded(true)
+              // ⬇️ Only announce inline-opened once per src even if component remounts
+              if (!announcedIframesRef.current.has(`ok:${src}`)) {
+                announcedIframesRef.current.add(`ok:${src}`)
+                // no extra text bubble; iframe itself is the signal
+              }
+            }
+          }}
+        />
+      </div>
+    )
+  }
+
+  // ⬇️ NEW: closable iframe for function_call calendars (show_calendar)
+  function FunctionCallCalendar({ src }: { src: string }) {
+    const [loaded, setLoaded] = useState(false)
+    const [visibleCard, setVisibleCard] = useState(!closedIframesRef.current.has(src))
+
+    useEffect(() => {
+      if (!visibleCard) return
+      // If not loaded in 4s, post a note and give link
+      const tFallback = setTimeout(() => {
+        if (!loaded && !announcedIframesRef.current.has(`fail:${src}`)) {
+          announcedIframesRef.current.add(`fail:${src}`)
+          setMessages((prev: any[]) => [
+            ...prev,
+            { sender: 'bot', text: 'Looks like the provider blocks embedding, so I opened the booking page in a new tab.', link: src }
+          ])
+        }
+      }, 4000)
+
+      const tNudge = setTimeout(() => {
+        if (visibleCard) pushEmailNudgeOnce(src)
+      }, 90_000)
+
+      return () => {
+        clearTimeout(tFallback)
+        clearTimeout(tNudge)
+      }
+    }, [loaded, visibleCard, src])
+
+    if (!visibleCard) return null
+
+    return (
+      <div className="relative mt-2">
+        <button
+          aria-label="Close calendar"
+          className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
+          onClick={() => {
+            setVisibleCard(false)
+            closedIframesRef.current.add(src)
+            pushEmailNudgeOnce(src)
+          }}
+        >
+          × Close
+        </button>
+
+        <iframe
+          src={src}
+          width="100%"
+          height="600"
+          style={{
+            border: 'none',
+            marginTop: '10px',
+            borderRadius: '8px',
+            display: 'block',
+            overflow: 'hidden',
+          }}
+          className="w-full"
+          allow="camera; microphone; clipboard-write"
+          onLoad={() => {
+            setLoaded(true)
+            if (!announcedIframesRef.current.has(`ok:${src}`)) {
+              announcedIframesRef.current.add(`ok:${src}`)
+              // no extra text bubble
+            }
+          }}
+        />
+      </div>
+    )
+  }
 
   if (!visible) {
     return (
@@ -43,10 +228,8 @@ export default function BotWidget({ botId }: { botId: string }) {
 
   return (
     <div className="fixed inset-0 md:inset-auto md:bottom-6 md:right-6 md:w-[350px] md:h-[500px] bg-white md:rounded-lg shadow-2xl z-50 flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white md:rounded-t-lg">
         <div className="flex items-center space-x-3">
-          {/* Updated logo container */}
           <div className="w-12 h-12 rounded-full shadow-lg overflow-hidden border border-gray-200 bg-white">
             {logoUrl ? (
               <img
@@ -73,9 +256,8 @@ export default function BotWidget({ botId }: { botId: string }) {
         </button>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 text-sm text-gray-800 space-y-3 bg-white">
-        {messages.map((msg, idx) => (
+        {messages.map((msg: any, idx: number) => (
           <div
             key={idx}
             className={`flex gap-2 items-start ${msg.sender === 'bot' ? 'self-start' : 'self-end'}`}
@@ -96,7 +278,7 @@ export default function BotWidget({ botId }: { botId: string }) {
             >
               <div
                 dangerouslySetInnerHTML={{
-                  __html: msg.text.replace(
+                  __html: String(msg.text || '').replace(
                     /(https?:\/\/[^\s<>"')\]]+)/g,
                     (rawUrl) => {
                       const cleanedUrl = rawUrl.replace(/[.)\],]+$/, '')
@@ -107,22 +289,18 @@ export default function BotWidget({ botId }: { botId: string }) {
               ></div>
 
               {msg.iframe && (
-                <iframe
-                  src={msg.iframe}
-                  width="100%"
-                  height={
-                    /calendar|schedule|meeting|booking|calendly|tidycal|zoho|vcita|appointlet/i.test(msg.iframe)
-                      ? '600'
-                      : '300'
-                  }
-                  style={{
-                    border: 'none',
-                    marginTop: '10px',
-                    borderRadius: '8px',
-                    display: 'block',
-                    overflow: 'hidden',
-                  }}
-                  className="w-full"
+                <EmbedBubble src={msg.iframe} idx={idx} />
+              )}
+
+              {msg.function_call?.name === 'show_calendar' && (
+                <FunctionCallCalendar
+                  src={(() => {
+                    try {
+                      return JSON.parse(msg.function_call.arguments).url
+                    } catch {
+                      return ''
+                    }
+                  })()}
                 />
               )}
 
@@ -137,24 +315,32 @@ export default function BotWidget({ botId }: { botId: string }) {
                 </a>
               )}
 
-              {msg.buttons && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {msg.buttons.map((btn, i) => (
-                    <button
-                      key={i}
-                      onClick={() => sendMessage(btn)}
-                      className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
-                    >
-                      {btn}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* ⬇️ UPDATED: Render CTAs (from API) + buttons (legacy) together */}
+              {(() => {
+                // Collect labels from both formats:
+                const labelsFromButtons = Array.isArray(msg.buttons) ? msg.buttons : []
+                const labelsFromCtas = Array.isArray(msg.ctas) ? msg.ctas.map((c: any) => c.label) : []
+                const uniqueLabels = [...new Set([...labelsFromButtons, ...labelsFromCtas])].filter(Boolean)
+
+                if (uniqueLabels.length === 0) return null
+                return (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {uniqueLabels.map((label: string, i: number) => (
+                      <button
+                        key={`${label}-${i}`}
+                        onClick={() => sendMessage(label, weekday)}  // send label as next user message
+                        className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         ))}
         
-        {/* Typing indicator */}
         {isTyping && (
           <div className="flex gap-2 items-start">
             {logoUrl && (
@@ -175,7 +361,6 @@ export default function BotWidget({ botId }: { botId: string }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="p-3 border-t bg-white flex gap-2">
         <textarea
           value={input}
