@@ -34,6 +34,23 @@ export default function PrivacyPolicy() {
             support@in60second.net
           </a>
         </p>
+
+        {/* Added: Data Export & Deletion */}
+        <section className="space-y-3 mt-10">
+          <h2 className="text-xl font-semibold text-[#003366]">Data Export & Deletion</h2>
+          <p>
+            You can export your conversation and lead data from the dashboard at any time. To delete your account and
+            associated data, email{' '}
+            <a href="mailto:support@in60second.net" className="text-blue-600 underline">
+              support@in60second.net
+            </a>{' '}
+            from your registered email. We respond within <strong>1 business day</strong>.
+          </p>
+          <p>
+            For security, we may request additional verification before completing a deletion request.
+            Backup copies may persist for up to 30 days in encrypted storage before permanent removal.
+          </p>
+        </section>
       </div>
 
       {/* Footer */}

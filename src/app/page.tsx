@@ -17,7 +17,7 @@ export default function HomePage() {
 
   const stats = [
     { number: "24/7", label: "Availability" },
-    { number: "≤5 min", label: "Typical Setup" },
+    { number: "Setup", label: "in minutes (typical)" },
     { number: "SSL", label: "Secure by Default" },
     { number: "Export", label: "Your Data Anytime" }
   ]
@@ -34,7 +34,6 @@ export default function HomePage() {
     { icon: '🏁', title: 'Launch It and Let It Work', desc: 'Your assistant helps prospects 24/7 and hands off to your team when needed.' },
   ]
 
-  // UPDATED: Dentist-focused testimonials (copy only)
   const testimonials = [
     {
       name: "Dr. Laura Patel, DDS",
@@ -144,7 +143,7 @@ export default function HomePage() {
       {/* Testimonials */}
       <section id="testimonials" className="py-20 px-4 bg-white">
         <div className="max-w-6xl mx-auto text-center">
-          <h2 className="text-4xl md:text-5xl font-bold text-blue-900 mb-4">Trusted by Professionals Worldwide</h2>
+          <h2 className="text-4xl md:text-5xl font-bold text-blue-900 mb-4">Trusted by Professionals</h2>
           <p className="text-xl text-blue-700 mb-12">Real customer feedback from everyday use</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {testimonials.map((t, i) => (

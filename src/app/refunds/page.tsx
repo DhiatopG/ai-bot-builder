@@ -67,7 +67,7 @@ export default function RefundsPage() {
           One-time add-ons or credit packs are refundable only if completely unused. Partially used add-ons are non-refundable.
         </p>
 
-        {/* Technical issues */}
+        {/* Service issues */}
         <h2 className="text-2xl font-semibold mt-10 mb-3">Service Issues</h2>
         <p className="text-blue-700 mb-4">
           If you experience a material technical issue and we cannot resolve it within <span className="font-semibold">5 business days</span> of your
@@ -97,6 +97,7 @@ export default function RefundsPage() {
         <div className="mt-12 border-t border-blue-200 pt-6 text-sm text-blue-700">
           <p className="mb-1"><span className="font-semibold">Legal entity:</span> In60Second LLC</p>
           <p className="mb-1"><span className="font-semibold">Mailing address:</span> 1001 S MAIN ST, STE 600, KALISPELL, MT 59901-5635, USA</p>
+          <p className="mb-1"><span className="font-semibold">Payments:</span> Processed securely by FastSpring (authorized reseller & Merchant of Record). Taxes/VAT/GST calculated at checkout.</p>
           <p className="mb-1"><span className="font-semibold">Support:</span> support@in60second.net</p>
         </div>
       </div>

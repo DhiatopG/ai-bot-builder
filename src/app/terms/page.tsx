@@ -33,10 +33,12 @@ export default function TermsPage() {
           You may not copy, resell, redistribute, or sublicense any part of our services without written permission. Misuse, abuse, or unauthorized use of the platform may result in account suspension or termination.
         </p>
 
-        <p className="mb-4 font-semibold text-[#003366]">Refund Policy</p>
+        {/* Refunds now defer to the Refund Policy */}
+        <p className="mb-4 font-semibold text-[#003366]">Refunds</p>
         <p className="mb-4">
-          We offer refunds within 7 days of purchase if you are unsatisfied with the service or experience technical issues we cannot resolve. To request a refund, please contact us at{' '}
-          <a href="mailto:support@in60second.net" className="underline text-blue-600">support@in60second.net</a>. Refunds are processed back to your original payment method.
+          Refunds are governed by our{' '}
+          <Link href="/refunds" className="underline text-blue-600">Refund Policy</Link>. If there is any inconsistency
+          between these Terms and the Refund Policy, the Refund Policy controls.
         </p>
 
         <p className="mb-4 font-semibold text-[#003366]">Modifications</p>
@@ -63,7 +65,8 @@ export default function TermsPage() {
           <Link href="/about" className="underline">About</Link> |{' '}
           <Link href="/contact" className="underline">Contact</Link> |{' '}
           <Link href="/privacy" className="underline">Privacy Policy</Link> |{' '}
-          <Link href="/terms" className="underline">Terms of Service</Link>
+          <Link href="/terms" className="underline">Terms of Service</Link> |{' '}
+          <Link href="/refunds" className="underline">Refund Policy</Link>
         </p>
       </footer>
     </div>
