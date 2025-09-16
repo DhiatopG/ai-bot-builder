@@ -119,14 +119,49 @@ export default function useChatLogic(botId: string) {
     return { body, consent }
   }
 
+  const startNewConversation = async () => {
+    try {
+      const newId = crypto.randomUUID()
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('conversation_id', newId)
+        localStorage.removeItem(`has_booked:${newId}`)
+      }
+      setConversationId(newId)
+      setPendingCalendarLink('')
+      setPendingUserMsg('')
+      setIsTyping(false)
+      setMessages([{ sender: 'bot', text: 'Hi! How can I help you today?' }])
+      try {
+        const session = await supabase.auth.getSession()
+        const accessToken = session.data.session?.access_token
+        await axios.post(
+          '/api/conversations',
+          { user_id: botId, conversation_id: newId },
+          { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined }
+        )
+      } catch (e) {
+        if (DEBUG) console.warn('[startNewConversation] conversations/start failed:', e)
+      }
+    } catch (e) {
+      console.error('[startNewConversation] failed', e)
+    }
+  }
+
   const sendMessage = async (optionalInput?: string, weekday?: string) => {
     const userMessage = optionalInput || input
     if (!userMessage.trim()) return
+    const lastBotText = [...messages].reverse().find(m => m.sender === 'bot')?.text || ''
+    const askedName  = /what'?s your name|can i take your name/i.test(lastBotText)
+    const askedEmail = /best email|share your email/i.test(lastBotText)
+    const emailRe    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const visitor_name  = askedName ? userMessage.trim() : undefined
+    const visitor_email = (askedEmail || emailRe.test(userMessage.trim())) ? userMessage.trim() : undefined
 
     setMessages(prev => [...prev, { sender: 'user', text: userMessage }])
     setInput('')
 
     if (userMessage === 'Open here' && pendingCalendarLink) {
+      if (DEBUG) console.log('[ChatLogic] Open here → using pendingCalendarLink', { pendingCalendarLink, pendingUserMsg })
       setIsTyping(true)
       try {
         const formattedHistory = messages
@@ -149,6 +184,8 @@ export default function useChatLogic(botId: string) {
             weekday,
             force_embed: true,
             debug: DEBUG,
+            visitor_name,
+            visitor_email,
           },
           { headers: { Authorization: `Bearer ${accessToken2}` } }
         )
@@ -182,9 +219,11 @@ export default function useChatLogic(botId: string) {
         }
 
         if (res2.data?.iframe) {
+          if (DEBUG) console.log('[ChatLogic] enqueue iframe', res2.data.iframe)
           setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: res2.data.iframe }])
         } else if (res2.data?.calendar_link) {
-          setMessages(prev => [...prev, { sender: 'bot', text: 'You can book using this link:', link: res2.data.calendar_link }])
+          if (DEBUG) console.log('[ChatLogic] enqueue iframe from calendar_link', res2.data.calendar_link)
+          setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: res2.data.calendar_link }])
         }
       } catch (_e) {
         setMessages(prev => [...prev, { sender: 'bot', text: 'Sorry, I encountered an error. Please try again.' }])
@@ -215,6 +254,16 @@ export default function useChatLogic(botId: string) {
       const session = await supabase.auth.getSession()
       const accessToken = session.data.session?.access_token
 
+      if (DEBUG) {
+        console.log('[ChatLogic] → /api/chat request', {
+          question: userMessage,
+          hasHistory: formattedHistory.length,
+          is_after_hours: isBusinessClosed,
+          weekday,
+          conversation_id: conversationId
+        })
+      }
+
       const res = await axios.post(
         '/api/chat',
         {
@@ -226,6 +275,8 @@ export default function useChatLogic(botId: string) {
           is_after_hours: isBusinessClosed,
           weekday,
           debug: DEBUG,
+          visitor_name,
+          visitor_email,
         },
         { headers: { Authorization: `Bearer ${accessToken}` } }
       )
@@ -233,8 +284,14 @@ export default function useChatLogic(botId: string) {
       if (DEBUG) {
         console.log('api/chat reply →', {
           debugId: res.headers?.['x-debug-id'],
-          _debug: res.data?._debug,
-          answer: res.data?.answer,
+          flags: {
+            need_calendar_confirm: !!res.data?.need_calendar_confirm,
+            has_iframe: !!res.data?.iframe,
+            has_calendar_link: !!res.data?.calendar_link,
+            has_link: !!res.data?.link
+          },
+          ctas_len: Array.isArray(res.data?.ctas) ? res.data.ctas.length : 0,
+          answer_sample: typeof res.data?.answer === 'string' ? res.data?.answer.slice(0, 120) : null
         })
       }
 
@@ -259,6 +316,7 @@ export default function useChatLogic(botId: string) {
       }
 
       if (res.data?.need_calendar_confirm && res.data?.calendar_link) {
+        if (DEBUG) console.log('[ChatLogic] need_calendar_confirm', res.data.calendar_link)
         setPendingCalendarLink(res.data.calendar_link)
         setPendingUserMsg(userMessage)
         setMessages(prev => [...prev, { sender: 'bot', text: 'Open the calendar here?', buttons: ['Open here', 'Open in new tab'] }])
@@ -267,9 +325,11 @@ export default function useChatLogic(botId: string) {
       }
 
       if (res.data?.iframe) {
+        if (DEBUG) console.log('[ChatLogic] enqueue iframe', res.data.iframe)
         setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: res.data.iframe }])
       } else if (res.data?.calendar_link) {
-        setMessages(prev => [...prev, { sender: 'bot', text: 'You can book using this link:', link: res.data.calendar_link }])
+        if (DEBUG) console.log('[ChatLogic] enqueue iframe from calendar_link', res.data.calendar_link)
+        setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: res.data.calendar_link }])
       }
       if (res.data?.link && !res.data?.calendar_link) {
         setMessages(prev => [...prev, { sender: 'bot', text: 'Open this page:', link: res.data.link }])
@@ -296,5 +356,6 @@ export default function useChatLogic(botId: string) {
     conversationId,
     messagesEndRef,
     isTyping,
+    startNewConversation,
   }
 }

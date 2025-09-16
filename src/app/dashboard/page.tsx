@@ -11,7 +11,7 @@ import {
   Menu,
   X,
   LogOut,
-  Calendar
+  Calendar,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -20,23 +20,27 @@ import { supabase } from '@/lib/client'
 import toast from 'react-hot-toast'
 import { useProtectedPage } from '@/hooks/useProtectedPage'
 
+// NEW: monthly appointments stat component
+import AllAppointmentsSuccessStat from '@/components/AllAppointmentsSuccessStat'
+
 export default function DashboardPage() {
   const router = useRouter()
   const { user, loading } = useProtectedPage()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [bots, setBots] = useState<any[]>([])
 
+  // Load user's bots
   useEffect(() => {
     if (!user) return
-    
+
     const loadBots = async () => {
-      if (!supabase) {
-        console.error('Supabase not initialized');
-        return;
-      }
-      
-      const { data } = await supabase.from('bots').select('*').eq('user_id', user.id)
-      setBots(data || [])
+      if (!supabase) return
+      const { data, error } = await supabase
+        .from('bots')
+        .select('*')
+        .eq('user_id', user.id)
+
+      if (!error) setBots(data || [])
     }
     loadBots()
   }, [user])
@@ -61,25 +65,21 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    if (!supabase) {
-      console.error('Supabase not initialized');
-      return;
-    }
-    
+    if (!supabase) return
     await supabase.auth.signOut()
     router.replace('/login')
   }
 
   const navItems = [
-{ icon: Home, label: 'Dashboard', path: '/dashboard' },
-  { icon: Bot, label: 'Bots', path: '/dashboard/bots', useLink: true },
-  { icon: Users, label: 'Leads', path: '/dashboard/leads' },
-  { icon: Upload, label: 'Upload', path: '/dashboard/upload', useLink: true },
-  { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
-  { icon: Bot, label: 'Integrations', path: '/dashboard/integrations' },
-  { icon: Settings, label: 'Settings', path: '/dashboard/settings', useLink: true },
-  { icon: Calendar, label: 'Calendar', path: '/dashboard/calendar', useLink: true }, // ✅ this line is new
-  { icon: HelpCircle, label: 'Help', path: '/dashboard' }
+    { icon: Home, label: 'Dashboard', path: '/dashboard' },
+    { icon: Bot, label: 'Bots', path: '/dashboard/bots', useLink: true },
+    { icon: Users, label: 'Leads', path: '/dashboard/leads' },
+    { icon: Upload, label: 'Upload', path: '/dashboard/upload', useLink: true },
+    { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
+    { icon: Bot, label: 'Integrations', path: '/dashboard/integrations' },
+    { icon: Settings, label: 'Settings', path: '/dashboard/settings', useLink: true },
+    { icon: Calendar, label: 'Calendar', path: '/dashboard/calendar', useLink: true },
+    { icon: HelpCircle, label: 'Help', path: '/dashboard' },
   ]
 
   return (
@@ -198,10 +198,18 @@ export default function DashboardPage() {
               <p className="text-xs lg:text-sm text-[#708090] mb-1">Messages Today</p>
               <div className="text-xl lg:text-2xl font-bold text-[#002D62]">--</div>
             </div>
-            <div className="bg-white p-4 lg:p-6 rounded-lg shadow-sm border border-gray-100">
-              <p className="text-xs lg:text-sm text-[#708090] mb-1">Success Rate</p>
-              <div className="text-xl lg:text-2xl font-bold text-[#002D62]">--</div>
-            </div>
+
+            <Link href="/dashboard/appointments" className="block">
+              <div className="bg-white p-4 lg:p-6 rounded-lg shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition">
+                <p className="text-xs lg:text-sm text-[#708090] mb-1">
+                  Appointment Success (This Month)
+                </p>
+                <div className="text-xl lg:text-2xl font-bold text-[#002D62]">
+                  {/* Monthly bookings across all bots */}
+                  <AllAppointmentsSuccessStat botIds={bots.map(b => b.id)} />
+                </div>
+              </div>
+            </Link>
           </div>
 
           <div className="mb-4 lg:mb-6">
@@ -223,10 +231,11 @@ export default function DashboardPage() {
                 <li key={bot.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow">
                   <h4 className="text-lg font-semibold text-gray-900 mb-1">{bot.bot_name}</h4>
                   <p className="text-sm text-gray-500 mb-4">
-                    Created {new Date(bot.created_at).toLocaleDateString('en-US', {
+                    Created{' '}
+                    {new Date(bot.created_at).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
-                      year: 'numeric'
+                      year: 'numeric',
                     })}
                   </p>
                   <label className="block text-xs text-gray-500 mb-1">Embed Script</label>

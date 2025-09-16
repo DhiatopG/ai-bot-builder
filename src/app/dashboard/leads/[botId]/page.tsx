@@ -27,7 +27,7 @@ interface Lead {
   name: string
   email: string
   phone: string
-  message: string
+  message: string            // ← UI uses "message"
   created_at: string
   status?: string
 }
@@ -59,48 +59,48 @@ export default function BotLeadsPage() {
 Email: ${lead.email || '-'}
 Phone: ${lead.phone || '-'}
 Message: ${lead.message || '-'}
-Date: ${lead.created_at || '-'}`;
+Date: ${lead.created_at || '-'}`
 
-    console.log('[COPY] Trying to copy text:', text);
+    console.log('[COPY] Trying to copy text:', text)
 
     if (!navigator.clipboard) {
-      console.warn('[COPY] Clipboard API not supported. Trying fallback...');
+      console.warn('[COPY] Clipboard API not supported. Trying fallback...')
     }
 
     try {
-      await navigator.clipboard.writeText(text);
-      console.log('[COPY] ✅ Clipboard API copy success');
+      await navigator.clipboard.writeText(text)
+      console.log('[COPY] ✅ Clipboard API copy success')
 
-      setCopySuccess(lead.id);
-      setTimeout(() => setCopySuccess(null), 2000);
+      setCopySuccess(lead.id)
+      setTimeout(() => setCopySuccess(null), 2000)
     } catch (err) {
-      console.error('[COPY] ❌ Clipboard API failed:', err);
+      console.error('[COPY] ❌ Clipboard API failed:', err)
 
       try {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
+        const textarea = document.createElement('textarea')
+        textarea.value = text
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
 
-        const successful = document.execCommand('copy');
-        console.log('[COPY] Fallback execCommand result:', successful);
+        const successful = document.execCommand('copy')
+        console.log('[COPY] Fallback execCommand result:', successful)
 
-        document.body.removeChild(textarea);
+        document.body.removeChild(textarea)
 
         if (successful) {
-          setCopySuccess(lead.id);
-          setTimeout(() => setCopySuccess(null), 2000);
+          setCopySuccess(lead.id)
+          setTimeout(() => setCopySuccess(null), 2000)
         } else {
-          console.error('[COPY] ❌ Fallback execCommand failed.');
+          console.error('[COPY] ❌ Fallback execCommand failed.')
         }
       } catch (fallbackErr) {
-        console.error('[COPY] ❌ Fallback copy exception:', fallbackErr);
+        console.error('[COPY] ❌ Fallback copy exception:', fallbackErr)
       }
     }
-  };
+  }
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -116,13 +116,32 @@ Date: ${lead.created_at || '-'}`;
     const fetchLeads = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !botId) return
+
       const { data, error } = await supabase
         .from('leads')
-        .select('*')
+        .select('*')                       // includes message from DB
         .eq('user_id', user.id)
         .eq('bot_id', botId)
         .order('created_at', { ascending: false })
-      if (!error && data) setLeads(data)
+
+      if (error) {
+        console.error('[leads] fetch error:', error)
+        return
+      }
+
+      if (data) {
+        // ⬇️ Map DB "message" → UI "message" so the table shows it
+        const rows: Lead[] = data.map((r: any) => ({
+          id: r.id,
+          name: r.name ?? '',
+          email: r.email ?? '',
+          phone: r.phone ?? '',
+          message: r.message ?? '',  // ← key change
+          created_at: r.created_at,
+          status: r.status ?? undefined,
+        }))
+        setLeads(rows)
+      }
     }
     fetchLeads()
   }, [botId])
@@ -177,7 +196,7 @@ Date: ${lead.created_at || '-'}`;
           >
             ← Go Back
           </button>
-          <h1 className="text-3xl font-bold text-gray-900 mb极-2">Leads</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Leads</h1>
           <p className="text-gray-600">Manage your leads</p>
         </div>
 
@@ -185,7 +204,7 @@ Date: ${lead.created_at || '-'}`;
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
             <div className="relative max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1极2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search leads..."
@@ -203,17 +222,20 @@ Date: ${lead.created_at || '-'}`;
                 <tr>
                   <th className="text-left py-4 px-6 font-semibold text-sm">Name</th>
                   <th className="text-left py-4 px-6 font-semibold text-sm">Email</th>
-                  <th className="text-left py-4 px-6 font-semib极 text-sm">Phone</th>
+                  <th className="text-left py-4 px-6 font-semibold text-sm">Phone</th>
                   <th className="text-left py-4 px-6 font-semibold text-sm">Message</th>
                   <th className="text-right py-4 px-6 font-semibold text-sm">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {paginated.map((lead) => (
-                  <tr key={lead.id} className={`hover:bg-gray-50 ${
-                    lead.status === 'converted' ? 'bg-green-50' :
-                    lead.status === 'qualified' ? 'bg-yellow-50' : ''
-                  }`}>
+                  <tr
+                    key={lead.id}
+                    className={`hover:bg-gray-50 ${
+                      lead.status === 'converted' ? 'bg-green-50' :
+                      lead.status === 'qualified' ? 'bg-yellow-50' : ''
+                    }`}
+                  >
                     <td className="py-4 px-6">
                       <div className="font-medium text-gray-900">{lead.name}</div>
                       <div className="text-sm text-gray-500">{new Date(lead.created_at).toLocaleDateString()}</div>
@@ -382,7 +404,7 @@ Date: ${lead.created_at || '-'}`;
                       <Eye className="w-4 h-4 text-gray-500" />
                     </button>
                     <div ref={dropdownRef} className="relative">
-                      <button onClick={() => setOpenDropdown(openDropdown === lead.id ? null : lead.id)} className="p-1 hover:极gray-100 rounded">
+                      <button onClick={() => setOpenDropdown(openDropdown === lead.id ? null : lead.id)} className="p-1 hover:bg-gray-100 rounded">
                         <MoreHorizontal className="hidden" />
                       </button>
                       {openDropdown === lead.id && (

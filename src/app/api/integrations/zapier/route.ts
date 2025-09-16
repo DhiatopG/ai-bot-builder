@@ -29,7 +29,7 @@ export async function POST(req: Request) {
           webhook_url,
           user_id: user.id,
         },
-        { onConflict: 'bot_id' }
+        { onConflict: 'bot_id,user_id' } // 🔹 ensure uniqueness per user per bot
       )
 
     if (error) {
@@ -55,10 +55,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Missing bot_id' }, { status: 400 })
     }
 
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { data, error } = await supabase
       .from('integrations_zapier')
       .select('webhook_url')
       .eq('bot_id', bot_id)
+      .eq('user_id', user.id) // 🔹 only return if this user owns it
       .maybeSingle()
 
     if (error) {

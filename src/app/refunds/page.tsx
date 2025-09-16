@@ -78,12 +78,12 @@ export default function RefundsPage() {
         <h2 className="text-2xl font-semibold mt-10 mb-3">How to Request a Refund</h2>
         <ul className="list-disc pl-6 text-blue-700 space-y-2 mb-4">
           <li>Send an email to <span className="font-semibold">support@in60second.net</span>.</li>
-          <li>Include your account email and the <span className="font-semibold">order ID</span> from our payment receipt.</li>
+          <li>Include your account email and the <span className="font-semibold">Verifone (2Checkout) order number</span> from the payment receipt.</li>
           <li>Tell us the reason for the request and whether you prefer a refund or account credit.</li>
         </ul>
         <p className="text-blue-700 mb-4">
           Approved refunds are returned to the original payment method. Banks typically take <span className="font-semibold">5–10 business days</span>
-          to post the funds back to your account.
+          to post the funds back to your account. Your card statement shows <span className="font-semibold">“2CO*IN60SECOND”</span>.
         </p>
 
         {/* Abuse / chargebacks */}
@@ -97,7 +97,10 @@ export default function RefundsPage() {
         <div className="mt-12 border-t border-blue-200 pt-6 text-sm text-blue-700">
           <p className="mb-1"><span className="font-semibold">Legal entity:</span> In60Second LLC</p>
           <p className="mb-1"><span className="font-semibold">Mailing address:</span> 1001 S MAIN ST, STE 600, KALISPELL, MT 59901-5635, USA</p>
-          <p className="mb-1"><span className="font-semibold">Payments:</span> Processed securely by FastSpring (authorized reseller & Merchant of Record). Taxes/VAT/GST calculated at checkout.</p>
+          <p className="mb-1">
+            <span className="font-semibold">Payments:</span> Processed securely by Verifone (2Checkout), our Merchant of Record.
+            Taxes/VAT/GST are calculated at checkout. Billing descriptor: “2CO*IN60SECOND”.
+          </p>
           <p className="mb-1"><span className="font-semibold">Support:</span> support@in60second.net</p>
         </div>
       </div>

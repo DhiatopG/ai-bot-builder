@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react' // ⬅️ added useRef
+import { useEffect, useRef, useState } from 'react'
 import useChatLogic from './ChatLogic'
 
 export default function BotWidget({ botId }: { botId: string }) {
@@ -18,35 +18,67 @@ export default function BotWidget({ botId }: { botId: string }) {
     setVisible,
     messagesEndRef,
     isTyping,
+    startNewConversation,
   } = useChatLogic(botId)
 
-  // ⬇️ NEW: keep track of which iframe src we already announced (success/fallback/close/nudge)
+  const DEBUG =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).has('debug') ||
+      process.env.NEXT_PUBLIC_DEBUG_CHAT === '1')
+  const dlog = (...args: any[]) => { if (DEBUG) console.log('[BotWidget]', ...args) }
+
   const announcedIframesRef = useRef<Set<string>>(new Set())
-  // ⬇️ NEW: track manual close per src so it stays hidden if component re-mounts
   const closedIframesRef = useRef<Set<string>>(new Set())
 
-  // ⬇️ UPDATED: gate the fallback note so it shows only once per src
+  function toEmbedUrl(raw: string) {
+    try {
+      const base = typeof window !== 'undefined' ? window.location.origin : 'https://example.com'
+      const u = new URL(raw, base)
+      const h = u.hostname.toLowerCase()
+      const before = u.toString()
+
+      if (/(^|\.)cal\.com$/.test(h)) u.searchParams.set('embed', 'true')
+      if (/(^|\.)tidycal\.com$/.test(h)) u.searchParams.set('embed', 'true')
+      if (/(^|\.)youcanbook\.me$/.test(h)) u.searchParams.set('embed', 'true')
+      if (/(^|\.)savvycal\.com$/.test(h)) u.searchParams.set('embed', 'true')
+
+      if (/(^|\.)calendly\.com$/.test(h)) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+        u.searchParams.set('embed_domain', host)
+        u.searchParams.set('embed_type', 'Inline')
+      }
+
+      const after = u.toString()
+      if (DEBUG) dlog('toEmbedUrl:', { host: h, before, after, changed: before !== after })
+      return after
+    } catch (e) {
+      if (DEBUG) dlog('toEmbedUrl: failed to parse', { raw, error: String(e) })
+      return raw
+    }
+  }
+
   const convertIframeToLink = (index: number) => {
     setMessages(m => {
       const src = (m as any)[index]?.iframe || ''
       const alreadyNotified = announcedIframesRef.current.has(`fail:${src}`)
+      if (DEBUG) dlog('convertIframeToLink()', { index, src, alreadyNotified })
+
       const updated = (m as any).map((msg: any, i: number) =>
         i === index && msg.iframe
-          ? { ...msg, text: 'Booking opens in a new tab:', link: msg.iframe, iframe: undefined }
+          ? { ...msg, text: 'Booking provider blocked embedding. Use the button below to open the booking page:', link: msg.iframe, iframe: undefined }
           : msg
       )
       if (!alreadyNotified && src) {
         announcedIframesRef.current.add(`fail:${src}`)
         return [
           ...updated,
-          { sender: 'bot', text: 'Looks like the provider blocks embedding, so I opened the booking page in a new tab.' }
+          { sender: 'bot', text: 'No problem — tap “Open Booking Page” to continue.' }
         ]
       }
       return updated
     })
   }
 
-  // ⬇️ NEW: one-time email nudge helper
   const pushEmailNudgeOnce = (src: string) => {
     if (!src) return
     const key = `nudge:${src}`
@@ -62,34 +94,40 @@ export default function BotWidget({ botId }: { botId: string }) {
     ])
   }
 
-  // ⬇️ NEW: closable + idle-nudge iframe bubble for msg.iframe
   function EmbedBubble({ src, idx }: { src: string; idx: number }) {
     const [loaded, setLoaded] = useState(false)
     const [visibleCard, setVisibleCard] = useState(!closedIframesRef.current.has(src))
+    const embedSrc = toEmbedUrl(src)
 
     useEffect(() => {
       if (!visibleCard) return
-      // fallback: if not loaded in 4s, convert to link
+      if (DEBUG) dlog('EmbedBubble mount', { idx, src, embedSrc, visibleCard })
+
       const tFallback = setTimeout(() => {
-        if (!loaded) convertIframeToLink(idx)
+        if (!loaded) {
+          if (DEBUG) dlog('EmbedBubble fallback timer fired', { idx, src })
+          convertIframeToLink(idx)
+        }
       }, 4000)
 
-      // recovery nudge after 90s if still visible (assume no booking yet)
       const tNudge = setTimeout(() => {
-        if (visibleCard) pushEmailNudgeOnce(src)
+        if (visibleCard) {
+          if (DEBUG) dlog('EmbedBubble nudge fired', { idx, src })
+          pushEmailNudgeOnce(src)
+        }
       }, 90_000)
 
       return () => {
         clearTimeout(tFallback)
         clearTimeout(tNudge)
+        if (DEBUG) dlog('EmbedBubble cleanup', { idx, src })
       }
-    }, [loaded, idx, visibleCard, src])
+    }, [loaded, idx, visibleCard, src, embedSrc])
 
     if (!visibleCard) return null
 
     return (
       <div className="relative mt-2">
-        {/* Close button */}
         <button
           aria-label="Close calendar"
           className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
@@ -103,64 +141,65 @@ export default function BotWidget({ botId }: { botId: string }) {
         </button>
 
         <iframe
-          src={src}
+          src={embedSrc}
           width="100%"
           height={
-            /calendar|schedule|meeting|booking|calendly|tidycal|zoho|vcita|appointlet|cal\.com|youcanbook/i.test(src)
+            /calendar|schedule|meeting|booking|calendly|tidycal|zoho|vcita|appointlet|cal\.com|youcanbook/i.test(embedSrc)
               ? '600'
               : '300'
           }
-          style={{
-            border: 'none',
-            marginTop: '10px',
-            borderRadius: '8px',
-            display: 'block',
-            overflow: 'hidden',
-          }}
           className="w-full"
-          allow="clipboard-write; fullscreen"
+          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', display: 'block', overflow: 'hidden' }}
+          allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
+          sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
             if (!loaded) {
+              if (DEBUG) dlog('EmbedBubble iframe onLoad', { idx, embedSrc })
               setLoaded(true)
-              // ⬇️ Only announce inline-opened once per src even if component remounts
               if (!announcedIframesRef.current.has(`ok:${src}`)) {
                 announcedIframesRef.current.add(`ok:${src}`)
-                // no extra text bubble; iframe itself is the signal
               }
             }
+          }}
+          onError={() => {
+            if (DEBUG) dlog('EmbedBubble iframe onError', { idx, embedSrc })
+            convertIframeToLink(idx)
           }}
         />
       </div>
     )
   }
 
-  // ⬇️ NEW: closable iframe for function_call calendars (show_calendar)
-  function FunctionCallCalendar({ src }: { src: string }) {
+  function FunctionCallCalendar({ src, idx }: { src: string; idx: number }) {
     const [loaded, setLoaded] = useState(false)
     const [visibleCard, setVisibleCard] = useState(!closedIframesRef.current.has(src))
+    const embedSrc = toEmbedUrl(src)
 
     useEffect(() => {
       if (!visibleCard) return
-      // If not loaded in 4s, post a note and give link
+      if (DEBUG) dlog('FunctionCallCalendar mount', { idx, src, embedSrc, visibleCard })
+
       const tFallback = setTimeout(() => {
         if (!loaded && !announcedIframesRef.current.has(`fail:${src}`)) {
           announcedIframesRef.current.add(`fail:${src}`)
-          setMessages((prev: any[]) => [
-            ...prev,
-            { sender: 'bot', text: 'Looks like the provider blocks embedding, so I opened the booking page in a new tab.', link: src }
-          ])
+          if (DEBUG) dlog('FunctionCallCalendar fallback timer fired', { idx, src })
+          convertIframeToLink(idx)
         }
       }, 4000)
 
       const tNudge = setTimeout(() => {
-        if (visibleCard) pushEmailNudgeOnce(src)
+        if (visibleCard) {
+          if (DEBUG) dlog('FunctionCallCalendar nudge fired', { idx, src })
+          pushEmailNudgeOnce(src)
+        }
       }, 90_000)
 
       return () => {
         clearTimeout(tFallback)
         clearTimeout(tNudge)
+        if (DEBUG) dlog('FunctionCallCalendar cleanup', { idx, src })
       }
-    }, [loaded, visibleCard, src])
+    }, [loaded, visibleCard, src, idx, embedSrc])
 
     if (!visibleCard) return null
 
@@ -179,24 +218,21 @@ export default function BotWidget({ botId }: { botId: string }) {
         </button>
 
         <iframe
-          src={src}
+          src={embedSrc}
           width="100%"
           height="600"
-          style={{
-            border: 'none',
-            marginTop: '10px',
-            borderRadius: '8px',
-            display: 'block',
-            overflow: 'hidden',
-          }}
           className="w-full"
-          allow="camera; microphone; clipboard-write"
+          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', display: 'block', overflow: 'hidden' }}
+          allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
+          sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
+            if (DEBUG) dlog('FunctionCallCalendar iframe onLoad', { idx, embedSrc })
             setLoaded(true)
-            if (!announcedIframesRef.current.has(`ok:${src}`)) {
-              announcedIframesRef.current.add(`ok:${src}`)
-              // no extra text bubble
-            }
+            if (!announcedIframesRef.current.has(`ok:${src}`)) announcedIframesRef.current.add(`ok:${src}`)
+          }}
+          onError={() => {
+            if (DEBUG) dlog('FunctionCallCalendar iframe onError', { idx, embedSrc })
+            convertIframeToLink(idx)
           }}
         />
       </div>
@@ -248,6 +284,13 @@ export default function BotWidget({ botId }: { botId: string }) {
             <p className="text-xs text-green-600">● Online</p>
           </div>
         </div>
+        <button
+          onClick={startNewConversation}
+          className="mr-2 px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
+          title="Start a new chat"
+        >
+          New chat
+        </button>
         <button
           onClick={() => setVisible(false)}
           className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors duration-150"
@@ -301,6 +344,7 @@ export default function BotWidget({ botId }: { botId: string }) {
                       return ''
                     }
                   })()}
+                  idx={idx}
                 />
               )}
 
@@ -315,9 +359,7 @@ export default function BotWidget({ botId }: { botId: string }) {
                 </a>
               )}
 
-              {/* ⬇️ UPDATED: Render CTAs (from API) + buttons (legacy) together */}
               {(() => {
-                // Collect labels from both formats:
                 const labelsFromButtons = Array.isArray(msg.buttons) ? msg.buttons : []
                 const labelsFromCtas = Array.isArray(msg.ctas) ? msg.ctas.map((c: any) => c.label) : []
                 const uniqueLabels = [...new Set([...labelsFromButtons, ...labelsFromCtas])].filter(Boolean)
@@ -328,8 +370,8 @@ export default function BotWidget({ botId }: { botId: string }) {
                     {uniqueLabels.map((label: string, i: number) => (
                       <button
                         key={`${label}-${i}`}
-                        onClick={() => sendMessage(label, weekday)}  // send label as next user message
-                        className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
+                        onClick={() => sendMessage(label, weekday)}
+                        className="bg-gray-2 00 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
                       >
                         {label}
                       </button>

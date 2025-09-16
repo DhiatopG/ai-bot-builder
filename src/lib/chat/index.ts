@@ -30,6 +30,39 @@ import { handleBookingAction, computeBookingFlags } from './actions/booking';
 import { handleMiscAction } from './actions/misc';
 import { shouldOfferCaptureCTA, handlePostAnswerCapture } from './actions/leadCapture';
 import { pickTemplate } from './templates/dentistry';
+async function postLeadToIntegrations(
+  req: Request,
+  payload: { botId: string; name: string; email: string; message: string }
+) {
+  const originHeader = (req.headers as any).get?.('origin') || '';
+  const hostHeader = (req.headers as any).get?.('host') || '';
+  const base =
+    process.env.PUBLIC_SITE_URL ||
+    originHeader ||
+    (hostHeader ? `http://${hostHeader}` : 'http://localhost:3000');
+
+  try {
+    const res = await fetch(`${base}/api/leads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // /api/leads will ONLY forward name/email/message to integrations
+      body: JSON.stringify({
+        bot_id: payload.botId,
+        name: payload.name,
+        email: payload.email,
+        message: payload.message,
+      }),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      console.error('[integrations] /api/leads non-200:', res.status, text?.slice(0, 300));
+    } else if (DEBUG_CHAT_LEADS) {
+      console.log('[integrations] /api/leads OK:', text?.slice(0, 300));
+    }
+  } catch (e) {
+    console.error('[integrations] /api/leads fetch failed:', e);
+  }
+}
 
 const DEBUG_CHAT_LEADS = true;
 
@@ -104,7 +137,9 @@ export async function orchestrateChat({
     history,
     conversation_id,
     user_auth_id,
-    is_after_hours
+    is_after_hours,
+    visitor_name,
+    visitor_email,
   } = body || {};
 
   if (!question || !botId) {
@@ -135,6 +170,77 @@ export async function orchestrateChat({
   const userLast = String(question);
   const lastMeaningful = getLastMeaningfulUserText(recentHistory as any, userLast);
   const retrievalQuery = isLikelyCaptureInput(userLast) ? (lastMeaningful || userLast) : userLast;
+
+  // === FIRST MESSAGE CAPTURE (meaningful only, after we have lastMeaningful) ===
+  try {
+    const looksLikePhone = (s: string) => /\+?\d[\d\s().-]{5,}/.test(String(s || ''));
+    const isLowWordCount = (s: string) => String(s || '').trim().split(/\s+/).length <= 2;
+
+    const captureish =
+      isLikelyCaptureInput(userLast) ||
+      isEmail(userLast) ||
+      looksLikePhone(userLast) ||
+      isLowWordCount(userLast); // catches "yes", "ok", etc.
+
+    const candidate = captureish ? (lastMeaningful || '') : userLast;
+    const firstMsg = String(candidate).trim().slice(0, 500);
+
+    console.log('[message] inputs', {
+      conversation_id,
+      userLastPreview: userLast.slice(0, 120),
+      lastMeaningfulPreview: (lastMeaningful || '').slice(0, 120),
+      captureish,
+    });
+
+    if (!conversation_id) {
+      console.warn('[meesage] skipped: missing conversation_id');
+    } else if (!firstMsg) {
+      console.log('[message] skipped: no meaningful text this turn');
+    } else {
+      const { data: existing, error: findErr } = await admin
+        .from('leads')
+        .select('id, message')
+        .eq('bot_id', botId)
+        .eq('conversation_id', conversation_id)
+        .limit(1);
+
+      if (findErr) {
+        console.error('[message] findErr:', findErr.message);
+      } else if (!existing || existing.length === 0) {
+        const { error: insErr } = await admin
+          .from('leads')
+          .upsert(
+            { bot_id: botId, conversation_id, message: firstMsg, source: 'chat' },
+            { onConflict: 'bot_id,conversation_id' }
+          );
+
+        if (insErr) {
+          console.error('[message] insert/upsert error:', insErr.message);
+          if (/column .*message/i.test(insErr.message || '')) {
+            console.warn('[message] DB missing message column. Run: alter table public.leads add column if not exists message text;');
+          }
+        } else {
+          console.log('[message] inserted', { botId, conversation_id, firstMsgPreview: firstMsg.slice(0, 120) });
+        }
+      } else if (existing[0] && !existing[0].message) {
+        const { error: updErr } = await admin
+          .from('leads')
+          .update({ message: firstMsg })
+          .eq('id', existing[0].id);
+
+        if (updErr) {
+          console.error('[message] backfill error:', updErr.message);
+        } else {
+          console.log('[message] backfilled', { id: existing[0].id, firstMsgPreview: firstMsg.slice(0, 120) });
+        }
+      } else {
+        console.log('[message] already set; no-op');
+      }
+    }
+  } catch (e) {
+    console.warn('[message] threw:', e);
+  }
+  // === END FIRST MESSAGE CAPTURE ===
 
   const chunks: { text: string }[] = await searchRelevantChunks(bot.id, retrievalQuery);
   console.log('[chunks] query =', retrievalQuery);
@@ -168,6 +274,21 @@ export async function orchestrateChat({
   const lastAssistantText =
     recentHistory.slice().reverse().find(({ role }) => role === 'assistant')?.content || '';
 
+  // ---- server-side lead field fallback (handles curly apostrophes) ----
+  const askedNameSrv  = /what(?:’|')?s your name|what is your name|can i take your name/i.test(lastAssistantText || '')
+  const askedEmailSrv = /best email|share (?:your )?email|your email|email to send/i.test(lastAssistantText || '')
+  const emailReSrv    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+  const effectiveName =
+    visitor_name ||
+    (askedNameSrv && !emailReSrv.test(String(userLast).trim()) ? String(userLast).trim() : null)
+
+  const effectiveEmail =
+    visitor_email ||
+    (askedEmailSrv && emailReSrv.test(String(userLast).trim()) ? String(userLast).trim() : null)
+
+  console.log('[chat] effective lead fields', { effectiveName, effectiveEmail })
+
   let intent = detectIntent(userLast, { lastAssistantText });
   if (/\b(toothache|tooth ache|tooth hurts|tooth pain|severe pain|swelling|abscess|knocked(?:\s*out)?\s*tooth|broken tooth|chipped tooth|bleeding|emergency|urgent)\b/i.test(userLast)) {
     intent = 'emergency' as any;
@@ -179,11 +300,11 @@ export async function orchestrateChat({
   const isLowSignalTurn = /^\W*$/.test(userLast.trim()) || userLast.trim().split(/\s+/).length === 1;
   const bookingWords = /\b(book|appointment|calendar|schedule|slot|reserve|time)\b/i;
 
-const intentForAction =
-  (isLikelyCaptureInput(userLast) && !bookingWords.test(userLast))
-    || isLowSignalTurn
-    ? intentFromHistory
-    : intent;
+  const intentForAction =
+    (isLikelyCaptureInput(userLast) && !bookingWords.test(userLast))
+      || isLowSignalTurn
+      ? intentFromHistory
+      : intent;
 
   const originHost = (() => {
     const origin = (req.headers as any).get?.('origin') || process.env.PUBLIC_SITE_URL || '';
@@ -206,31 +327,29 @@ const intentForAction =
   }
 
   if (entities.name && !isBadNameToken(entities.name) && (entities.email || entities.phone)) {
-    const baseUrl = new URL(req.url).origin;
-    try {
-      const lastRealMsg = getLastMeaningfulUserText(recentHistory as any, userLast).slice(0, 500);
-      const earlyLeadPayload: any = {
-        bot_id: botId,
-        name: entities.name,
-        email: entities.email || null,
-        phone: entities.phone || null,
-        conversation_id,
-        user_id: user_auth_id || null
-      };
-      if (lastRealMsg) earlyLeadPayload.message = lastRealMsg;
+  try {
+    const updates: any = { source: 'chat' };
+    if (effectiveName)  updates.name  = capName(effectiveName);
+    if (effectiveEmail) updates.email = effectiveEmail;
 
-      await fetch(`${baseUrl}/api/leads`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          cookie: (req.headers as any).get?.('cookie') || '',
-        },
-        body: JSON.stringify(earlyLeadPayload),
-      });
-    } catch (e) {
-      console.warn('[api/chat -> /api/leads] failed', e);
+    if (updates.name || updates.email) {
+      const { error } = await admin
+        .from('leads')
+        .update(updates)
+        .eq('bot_id', botId)
+        .eq('conversation_id', conversation_id);
+
+      if (error) {
+        console.error('[leads update (partial)] error:', error.message, updates);
+      } else {
+        console.log('[leads update (partial) ok]', { bot_id: botId, conversation_id });
+      }
     }
+  } catch (e: any) {
+    console.error('[leads update (partial) threw]:', e?.message || String(e));
   }
+}
+
 
   const bookingFlags = computeBookingFlags({ userLast, lastAssistantText, intent: intentForAction });
   let action = decideNextAction(intentForAction, entities, biz, {
@@ -239,7 +358,7 @@ const intentForAction =
     softAck: bookingFlags.softAck,
     rawUserText: meaningfulUserText || userLast
   });
-  
+
   if (!kbHasCoverage) {
     const text: string = pickTemplate(String(intentForAction || ''), biz);
     const lowIntentInfoLocal = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
@@ -324,22 +443,71 @@ const intentForAction =
   const provisionalName = getProvisionalName(recentHistory as any, lastAssistantText, userLast);
   const inlineName = tryExtractInlineName(userLast);
   const canName = canConsiderNameFromUser(recentHistory as any, userLast);
-  const resolvedName = (entities.name && !isBadNameToken(entities.name)) ? entities.name.trim()
-                    : (canName && inlineName && !isBadNameToken(inlineName)) ? inlineName.trim()
-                    : (canName && provisionalName && !isBadNameToken(provisionalName)) ? provisionalName.trim()
-                    : null;
+  const resolvedName =
+  (entities.name && !isBadNameToken(entities.name)) ? entities.name.trim()
+: (inlineName && !isBadNameToken(inlineName))         ? inlineName.trim()
+: (provisionalName && !isBadNameToken(provisionalName)) ? provisionalName.trim()
+: (effectiveName && !isBadNameToken(effectiveName))   ? String(effectiveName).trim()
+: null;
+
   const emailFromTurn = isEmail(userLast) ? normalizeEmail(userLast) : null;
   const combinedEmail = entities.email ? normalizeEmail(entities.email) : (emailFromTurn || null);
+
+
+
+
+  if (DEBUG_CHAT_LEADS) {
+    console.log('[chat] effective lead fields', { effectiveName, effectiveEmail })
+  }
+
+  // helpful capture logs
+  console.log('[capture.flags]', {
+    lastAssistantTextPreview: String(lastAssistantText || '').slice(0, 120),
+    askedNameSrv, askedEmailSrv,
+    saidYes, saidNo,
+    lastAskedName, lastAskedEmail, askedNameBefore, askedEmailBefore,
+    resolvedName,
+    combinedEmail,
+    nowHasName: !!resolvedName,
+    nowHasEmailOrPhone: !!(combinedEmail || entities.phone),
+  });
+
+ try {
+  if (effectiveName || effectiveEmail) {
+    const updates: any = { source: 'chat' };
+    if (effectiveName)  updates.name  = capName(effectiveName);
+    if (effectiveEmail) updates.email = effectiveEmail;
+
+    const { error } = await admin
+      .from('leads')
+      .update(updates)
+      .eq('bot_id', botId)
+      .eq('conversation_id', conversation_id);
+
+    if (error) {
+      console.error('[chat] leads update (partial) error:', error.message, updates);
+    } else {
+      console.log('[chat] leads update (partial) ok', { bot_id: botId, conversation_id });
+    }
+  }
+} catch (e: any) {
+  console.error('[chat] leads update (partial) threw:', e?.message || String(e));
+}
 
   const inCapture =
     askedNameBefore || lastAskedName || askedEmailBefore || lastAskedEmail;
 
   const nowHasName = !!resolvedName;
   const nowHasEmailOrPhone = !!(combinedEmail || entities.phone);
-  const justCompletedNow = !(!!beforeName && beforeEmailOrPhone) && (nowHasName && nowHasEmailOrPhone);
+  const _justCompletedNow = !(!!beforeName && beforeEmailOrPhone) && (nowHasName && nowHasEmailOrPhone);
   const alreadyConfirmed = Array.isArray(history) && history.some(({ content }: any) =>
-    /all set, .*saved your email/i.test(String(content || ''))
-  );
+  /all set, .*saved your email/i.test(String(content || ''))
+);
+
+// NEW: recognize the first “you’re all set” message as a prior acknowledgement
+const _alreadyAcknowledged = Array.isArray(history) && history.some(({ content }: any) =>
+  /you'?re all set/i.test(String(content || ''))
+);
   const everBookingFlow =
     calendarAlreadyShown ||
     bookingFlowActive ||
@@ -384,11 +552,11 @@ const intentForAction =
   }
 
   if (
-  _askedEmailLast &&
-  (saidYes || saidNo) &&
-  !alreadyConfirmed &&
-  !nowHasEmailOrPhone
-) {
+    _askedEmailLast &&
+    (saidYes || saidNo) &&
+    !alreadyConfirmed &&
+    !nowHasEmailOrPhone
+  ) {
 
     const assistantText = saidYes
       ? `Thanks${resolvedName ? `, ${capName(resolvedName)}` : ''}! What’s the best email to send details and next steps?`
@@ -405,25 +573,89 @@ const intentForAction =
     );
   }
 
-  
   if (
   (_askedEmailLast || lastAskedEmail || askedEmailBefore) &&
   isEmail(userLast) &&
   (alreadyConfirmed || nowHasEmailOrPhone)
 ) {
-  const basis = getLastMeaningfulUserText(recentHistory as any, userLast) || userLast;
-  const { avail } = inferTopicAndAvailability(basis);
-  const assistantText = `Got it, you're all set! Would you like to see our availability for ${avail}?`;
-  if (assistantOfferedAvailability) {
-    action = { type: 'confirm', message: assistantText } as any;
-  } else {
-    return respondAndLog(
-      admin,
-      { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? intent ?? '') },
-      { answer: assistantText }
-    );
+  // Helper: pick the FIRST meaningful user message in the convo
+  const looksLikePhone = (s: string) => /\+?\d[\d\s().-]{5,}/.test(String(s || ''));
+  const isShortAck = (s: string) =>
+    /\b(yes|yeah|yep|sure|ok|okay|please|no|nah|nope|thanks?|thank you|cheers)\b/i.test(String(s || '').trim());
+
+  const chooseFirstMeaningful = (
+    hist: { role: 'user' | 'assistant'; content: string }[],
+    currentUserLast: string
+  ) => {
+    // 1) scan from the beginning for the first real user sentence
+    for (const m of hist) {
+      if (m.role !== 'user') continue;
+      const t = String(m.content || '').trim();
+      if (!t) continue;
+      if (isEmail(t) || looksLikePhone(t) || isLikelyCaptureInput(t) || isShortAck(t)) continue;
+      return t;
+    }
+    // 2) fallback: last meaningful before the most recent capture ask
+    const idx = lastCaptureIndex(hist as any);
+    if (idx !== -1) {
+      const fb = getLastMeaningfulUserText(hist.slice(0, idx) as any, currentUserLast);
+      if (fb && !isEmail(fb) && !looksLikePhone(fb) && !isLikelyCaptureInput(fb) && !isShortAck(fb)) {
+        return fb.trim();
+      }
+    }
+    // 3) final fallback: whatever we think is the last meaningful
+    const last = getLastMeaningfulUserText(hist as any, currentUserLast);
+    if (last && !isEmail(last) && !looksLikePhone(last) && !isLikelyCaptureInput(last) && !isShortAck(last)) {
+      return last.trim();
+    }
+    return '';
+  };
+
+  // Build a safe message
+  const safeMessage = chooseFirstMeaningful(recentHistory as any, userLast);
+
+  // Upsert the lead with name, email, AND message
+  try {
+    const leadPayload: any = {
+      bot_id: botId,
+      conversation_id,
+      source: 'chat',
+      name: resolvedName ? capName(resolvedName) : null,
+      email: normalizeEmail(userLast),
+      message: safeMessage ? safeMessage.slice(0, 500) : null,
+      user_id: user_auth_id || null,
+    };
+await postLeadToIntegrations(req, {
+  botId,
+  name: resolvedName ? capName(resolvedName) : '',
+  email: normalizeEmail(userLast),   // the email the user just typed
+  message: safeMessage || ''         // the first meaningful message
+});
+
+    const { error: leadErr } = await admin
+      .from('leads')
+      .upsert(leadPayload, { onConflict: 'bot_id,conversation_id' });
+
+    if (leadErr) {
+      console.error('[email-turn save lead] upsert error:', leadErr.message, leadPayload);
+    } else {
+      console.log('[email-turn save lead] saved', {
+        conversation_id,
+        message_preview: (leadPayload.message || '').slice(0, 120),
+      });
+    }
+  } catch (e: any) {
+    console.error('[email-turn save lead] threw:', e?.message || String(e));
   }
+const assistantText = `Thanks${resolvedName ? `, ${capName(resolvedName)}` : ''}. We'll use this for support if needed.`;
+return respondAndLog(
+  admin,
+  { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? intent ?? '') },
+  { answer: assistantText }
+);
+
 }
+  
 
   if (triageCapturePriority) {
     if ((action as any)?.type === 'open_calendar' || (action as any)?.type === 'confirm') {
@@ -505,12 +737,8 @@ const intentForAction =
     action = { type: 'freeform', message: '' } as any;
   }
 
-  let leadJustCompleted = false;
-  let leadPreface = '';
-  if (justCompletedNow) {
-    leadJustCompleted = true;
-    leadPreface = `All set, ${capName(resolvedName)}! I’ve saved your email (${normalizeEmail(combinedEmail!)}). `;
-  }
+ let leadJustCompleted = false;
+let leadPreface = '';
 
   const systemPrompt = buildSystemPrompt({
     detected_intent: intentForAction,
@@ -635,7 +863,8 @@ const intentForAction =
     !((entities.email || entities.phone || isEmail(userLast)) && action.type === 'freeform') &&
     !/^\s*$/.test(String(action.message || ''));
 
-  const userMsg: ChatCompletionMessageParam = { role: 'user', content: userLast };
+  // Use the de-noised message so the model doesn't respond to the raw email
+const userMsg: ChatCompletionMessageParam = { role: 'user', content: effectiveUserText || userLast };
 
   const messageList: ChatCompletionMessageParam[] = includeActionMsg
     ? [system, knowledgeMsg, ...(recentHistory as any), userMsg, { role: 'assistant', content: action.message }]
@@ -649,13 +878,38 @@ const intentForAction =
 
   console.log('[openai] usage', resp.usage || null, 'finish', resp.choices?.[0]?.finish_reason || null);
 
-  let finalAnswer: string = resp.choices[0]?.message?.content?.trim() ?? String(action.message ?? '');
-  console.log('[openai] answer preview:', (finalAnswer || '').replace(/\s+/g,' ').slice(0, 200));
+ let finalAnswer: string =
+  resp.choices[0]?.message?.content?.trim() ?? String(action.message ?? '');
+console.log(
+  '[openai] answer preview:',
+  (finalAnswer || '').replace(/\s+/g, ' ').slice(0, 200)
+);
 
-  if (leadJustCompleted && finalAnswer) {
-    finalAnswer = `${leadPreface}${finalAnswer}`;
-  }
+// Remove any leftover email-ack lines the model might add (only right after email capture)
+if (isEmail(userLast) || leadJustCompleted) {
+  finalAnswer = finalAnswer
+    // common “we saved / all set / updates” lines
+    .replace(/\bI(?:'|’)ll make a note of that email\.?\s*/i, '')
+    .replace(/\bI(?: have|’ve) saved your email[^.!?]*[.!?]\s*/i, '')
+    .replace(/\bAll set,[^.!?]*[.!?]\s*/i, '')
+    .replace(/\bWe(?:’|')?ll send you the latest updates[^.!?]*[.!?]\s*/i, '')
 
+    // NEW: “Thanks/Thank you for providing/sharing your email …”
+    .replace(/\bThank(?:s| you)[^.!?]*(?:providing|sharing)\s+your email[^.!?]*[.!?]\s*/i, '')
+
+    // NEW: “I’ll make sure to send you the details … to <email>”
+    .replace(/\bI(?:'|’)?ll (?:make sure to )?send (?:you )?(?:the )?(?:details?|information|updates)[^.!?]*\bto\s+[^\s@]+@[^\s@]+\.[^\s@.]+[^.!?]*[.!?]\s*/i, '')
+    .replace(/\bI will (?:make sure to )?send (?:you )?(?:the )?(?:details?|information|updates)[^.!?]*\bto\s+[^\s@]+@[^\s@]+\.[^\s@.]+[^.!?]*[.!?]\s*/i, '')
+
+    // NEW: “I’ll/We’ll email you at <email> …”
+    .replace(/\bI(?:'|’)?ll email you (?:at|on)\s+[^\s@]+@[^\s@]+\.[^\s@.]+[^.!?]*[.!?]\s*/i, '')
+    .replace(/\bWe(?:'|’)?(?: will|’ll)? email you (?:at|on)\s+[^\s@]+@[^\s@]+\.[^\s@.]+[^.!?]*[.!?]\s*/i, '')
+
+    .trim();
+}
+if (leadJustCompleted && finalAnswer) {
+  finalAnswer = `${leadPreface}${finalAnswer}`;
+}
   const assistantTurnsSoFar = recentHistory.filter(({ role }) => role === 'assistant').length;
   const earlyNoBooking = allowLeadCapture && assistantTurnsSoFar < 2;
   if (earlyNoBooking && !bookingFlags.strongBookingNow && hasBookingLanguage(finalAnswer)) {
@@ -667,99 +921,145 @@ const intentForAction =
     }
   }
 
-  if (leadJustCompleted) {
-    const lastReal = [...recentHistory].reverse().find(
-      ({ role, content }) => role === 'user' && !isLikelyCaptureInput(String(content || ''))
-    );
-    const lastRealText = String(lastReal?.content || '').trim();
-    const intentBeforeCapture = detectIntent(lastRealText || userLast, { lastAssistantText });
+ if (leadJustCompleted) {
+  const lastReal = [...recentHistory].reverse().find(
+    ({ role, content }) => role === 'user' && !isLikelyCaptureInput(String(content || ''))
+  );
+  const lastRealText = String(lastReal?.content || '').trim();
+  const intentBeforeCapture = detectIntent(lastRealText || userLast, { lastAssistantText });
 
-    try {
-      logHistory('recentHistory window', recentHistory as any);
+  try {
+    logHistory('recentHistory window', recentHistory as any);
 
-      const originalMessage = getLastMeaningfulUserText(recentHistory as any, userLast);
-      if (DEBUG_CHAT_LEADS) {
-        console.log('[chat] leadJustCompleted snapshot:', {
-          userLast: preview(userLast),
-          lastRealText: preview(lastRealText),
-          originalMessagePreview: preview(originalMessage),
-          originalMessageLen: (originalMessage || '').length,
-          resolvedName: capName(resolvedName),
-          combinedEmail: normalizeEmail(combinedEmail || ''),
-          havePhone: !!entities.phone,
-          recentHistoryLen: recentHistory.length
-        });
-      }
+    const originalMessageRaw = getLastMeaningfulUserText(recentHistory as any, userLast);
+    console.log('[leadComplete.original]', {
+      userLast: preview(userLast),
+      lastRealText: preview(lastRealText),
+      originalMessagePreview: preview(originalMessageRaw),
+      originalMessageLen: (originalMessageRaw || '').length,
+      resolvedName: capName(resolvedName),
+      combinedEmail: normalizeEmail(combinedEmail || ''),
+      havePhone: !!entities.phone,
+      recentHistoryLen: recentHistory.length,
+    });
 
-      const payload = {
-        name: capName(resolvedName),
-        email: normalizeEmail(combinedEmail!),
-        phone: entities.phone || null,
-        message: (originalMessage || '').slice(0, 500),
-        bot_id: botId,
-        user_id: user_auth_id || null
-      };
+    // choose a safe, non-capture message to store
+    const looksLikePhone = (s: string) => /\+?\d[\d\s().-]{5,}/.test(String(s || ''));
+    const originalMessage = (originalMessageRaw || '').trim();
 
-      if (DEBUG_CHAT_LEADS) console.log('[chat] UPSERT payload:', payload);
+    let reason = 'original meaningful';
+    let safeMessage: string | null = originalMessage;
 
-      const { data: upserted, error: upsertErr } = await admin
-        .from('leads')
-        .upsert([payload], { onConflict: 'bot_id,email' })
-        .select('id, created_at, email, bot_id, message, phone, user_id')
-        .single();
-
-      if (upsertErr) {
-        console.error('[chat] direct leads upsert error:', upsertErr, payload);
+    if (
+      !safeMessage ||
+      isEmail(safeMessage) ||
+      looksLikePhone(safeMessage) ||
+      isLikelyCaptureInput(safeMessage)
+    ) {
+      const idx = lastCaptureIndex(recentHistory as any);
+      const fallback =
+        idx !== -1
+          ? getLastMeaningfulUserText((recentHistory as any).slice(0, idx), userLast)
+          : '';
+      if (
+        fallback &&
+        !isEmail(fallback) &&
+        !looksLikePhone(fallback) &&
+        !isLikelyCaptureInput(fallback)
+      ) {
+        safeMessage = fallback.trim();
+        reason = 'pre-capture fallback';
       } else {
-        console.log('[chat] direct leads upsert OK:', upserted);
+        safeMessage = null;
+        reason = 'none (would have been email/phone/capture)';
       }
+    }
+
+    console.log('[leadComplete.message] choice', {
+      originalPreview: (originalMessage || '').slice(0, 120),
+      chosenPreview: (safeMessage || '').slice(0, 120),
+      reason,
+    });
+
+    const payload = {
+      name: capName(resolvedName),
+      email: normalizeEmail(combinedEmail!),
+      phone: entities.phone || null,
+      message: safeMessage ? safeMessage.slice(0, 500) : null, // sanitized
+      bot_id: botId,
+      conversation_id,
+      user_id: user_auth_id || null,
+      source: 'chat',
+    };
+
+    const { data: upserted, error: upsertErr } = await admin
+      .from('leads')
+      .upsert([payload], { onConflict: 'bot_id,conversation_id' })
+      // ⬇⬇ remove the nonexistent `message` column from selects
+      .select('id, created_at, email, bot_id, conversation_id, phone, user_id, message')
+      .single();
+
+    if (upsertErr) {
+      console.error('[leadComplete] upsert error:', upsertErr.message);
+    } else {
+      console.log('[leadComplete] upsert OK', {
+        id: upserted?.id,
+        messagePreview: (payload.message || '').slice(0, 120),
+      });
 
       const { data: verifyRows, error: verifyError } = await admin
         .from('leads')
-        .select('id, created_at, email, bot_id, message, phone, user_id')
+        // ⬇⬇ also keep `message` out here
+        .select('id, created_at, email, bot_id, phone, user_id, message')
         .eq('email', normalizeEmail(combinedEmail!))
         .eq('bot_id', botId)
         .order('created_at', { ascending: false })
         .limit(1);
 
-      console.log('[chat] verify-after-upsert:', { verifyError, verifyRows });
-    } catch (e) {
-      console.error('[chat] direct leads upsert threw:', e);
+      console.log('[leadComplete] verify-after-upsert:', { verifyError, verifyRows });
+      await postLeadToIntegrations(req, {
+      botId,
+      name: capName(resolvedName),
+      email: normalizeEmail(combinedEmail!),
+      message: payload.message || safeMessage || ''
+    });
+    
     }
-
-    const mentionsBooking =
-      /\b(book|schedule|appointment|calendar|slot|time|tomorrow|today)\b/i.test(lastRealText);
-
-    const shouldBookNow =
-      intentBeforeCapture === 'emergency' ||
-      intentBeforeCapture === 'booking' ||
-      mentionsBooking;
-
-    if (shouldBookNow) {
-      return handleBookingAction({
-        kind: 'open_calendar',
-        action: { type: 'open_calendar', message: '' } as any,
-        admin,
-        ctx: { botId, conversation_id, user_auth_id, userLast, intent: String(intentForAction ?? '') },
-        biz,
-        leadJustCompleted: true,
-        leadPreface,
-        rewriteWithTone: (d: string) => rewriteWithTone({
-          systemPrompt, fullKnowledge, recentHistory, userText: effectiveUserText, draft: d
-        })
-      });
-    }
-
-    const basis = lastRealText || userLast;
-    const { topic, avail } = inferTopicAndAvailability(basis);
-    const confirm = `Thanks, ${capName(resolvedName)}! We’ll send you the latest updates, offers, and tips about ${topic} to ${normalizeEmail(combinedEmail!)}.`;
-    const follow = `By the way, would you like me to send you our current availability for ${avail}?`;
-    const combo  = `${leadPreface}${confirm}\n\n${follow}`;
-    return respondAndLog(admin,
-      { botId, conversation_id, user_auth_id, userLast, assistantText: combo, intent: String(intentForAction ?? '') },
-      { answer: combo }
-    );
+  } catch (e) {
+    console.error('[leadComplete] threw:', e);
   }
+
+  const mentionsBooking =
+    /\b(book|schedule|appointment|calendar|slot|time|tomorrow|today)\b/i.test(lastRealText);
+
+  const shouldBookNow =
+    intentBeforeCapture === 'emergency' || intentBeforeCapture === 'booking' || mentionsBooking;
+
+  if (shouldBookNow) {
+    return handleBookingAction({
+      kind: 'open_calendar',
+      action: { type: 'open_calendar', message: '' } as any,
+      admin,
+      ctx: { botId, conversation_id, user_auth_id, userLast, intent: String(intentForAction ?? '') },
+      biz,
+      leadJustCompleted: true,
+      leadPreface,
+      rewriteWithTone: (d: string) =>
+        rewriteWithTone({ systemPrompt, fullKnowledge, recentHistory, userText: effectiveUserText, draft: d }),
+    });
+  }
+
+  const basis = lastRealText || userLast;
+const { avail } = inferTopicAndAvailability(basis);
+
+if (finalAnswer) {
+  finalAnswer = `${finalAnswer}\n\nBy the way, would you like me to send you our current availability for ${avail}?`;
+} else {
+  finalAnswer = `By the way, would you like me to send you our current availability for ${avail}?`;
+}
+// no return — fall through to the final respondAndLog below
+}
+
 
   const captureAsks = countCaptureAsks(recentHistory as any);
   const lastAskIdx = lastCaptureIndex(recentHistory as any);

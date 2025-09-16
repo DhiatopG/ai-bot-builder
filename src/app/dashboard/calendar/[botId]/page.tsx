@@ -1,3 +1,4 @@
+// src/app/dashboard/calendar/[botId]/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -21,7 +22,7 @@ export default function CalendarPage() {
   const { botId } = useParams() as { botId: string }
   const router = useRouter()
 
-  // Calendar (your original)
+  // Calendar URL (embedded form)
   const [calendarUrl, setCalendarUrl] = useState('')
   const [savingCal, setSavingCal] = useState(false)
 
@@ -40,36 +41,91 @@ export default function CalendarPage() {
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [savingInfo, setSavingInfo] = useState(false)
 
+  // Webhook secret
+  const [provider, setProvider] = useState('calendly')
+  const [hasSecret, setHasSecret] = useState(false)
+  const [secret, setSecret] = useState('')
+  const [savingSecret, setSavingSecret] = useState(false)
+  const [testSecret, setTestSecret] = useState('') // for test button
+
+  // ---------- Google Calendar Connect (dynamic) ----------
+  const [gLoading, setGLoading] = useState(true)
+  const [gConnected, setGConnected] = useState(false)
+  const [gValid, setGValid] = useState(false)
+  const [gCalendarId, setGCalendarId] = useState<string | null>(null)
+
+  const refreshGoogleStatus = async () => {
+    setGLoading(true)
+    try {
+      const { data: auth } = await supabase.auth.getUser()
+      const uid = auth?.user?.id
+      if (!uid) {
+        setGConnected(false)
+        setGValid(false)
+        setGCalendarId(null)
+        return
+      }
+
+      // Read your own connection row (RLS-secured)
+      const { data: row, error } = await supabase
+        .from('integrations_calendar')
+        .select('access_token, refresh_token, expires_at, calendar_id')
+        .eq('user_id', uid)
+        .maybeSingle()
+
+      if (error) throw error
+
+      if (row) {
+        const exp = Number(row.expires_at ?? 0) // int8 epoch seconds
+        const now = Math.floor(Date.now() / 1000)
+        setGConnected(Boolean(row.access_token) && Boolean(row.refresh_token))
+        setGValid(exp > (now + 5 * 60))
+        setGCalendarId(row.calendar_id ?? null)
+      } else {
+        setGConnected(false)
+        setGValid(false)
+        setGCalendarId(null)
+      }
+    } catch (_e: any) {
+      // silent; just mark not connected
+      setGConnected(false)
+      setGValid(false)
+      setGCalendarId(null)
+    } finally {
+      setGLoading(false)
+    }
+  }
+
+  const handleGoogleConnect = () => {
+    // Kick off OAuth; server saves tokens & returns to this page
+    const next = typeof window !== 'undefined'
+      ? encodeURIComponent(window.location.pathname)
+      : encodeURIComponent(`/dashboard/bots/${botId}/calendar`)
+    window.location.href = `/api/integrations/google/start?next=${next}`
+  }
+  // ------------------------------------------------------
+
   const setField = (key: keyof BotInfo) => (v: string) =>
     setInfo(prev => ({ ...prev, [key]: v }))
 
   useEffect(() => {
     if (!botId) return
     ;(async () => {
-      // Load calendar (unchanged)
-      const { data: botData, error: botErr } = await supabase
+      // Load calendar URL
+      const { data: botData } = await supabase
         .from('bots')
         .select('calendar_url')
         .eq('id', botId)
-        .single()
+        .maybeSingle()
+      if (botData?.calendar_url) setCalendarUrl(botData.calendar_url)
 
-      if (botErr) {
-        console.error(botErr)
-      } else if (botData?.calendar_url) {
-        setCalendarUrl(botData.calendar_url)
-      }
-
-      // Load bot_info via API (bypasses RLS after server ownership check)
+      // Load contact/offers via API
       setLoadingInfo(true)
       try {
         const res = await fetch(`/api/bots/${botId}/info`, { cache: 'no-store' })
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}))
-          throw new Error(j.error || `Failed to load bot_info (${res.status})`)
-        }
         const j = await res.json().catch(() => ({}))
-        const bi = j.data
-        if (bi) {
+        if (res.ok && j?.data) {
+          const bi = j.data
           setInfo({
             contact_email: bi.contact_email ?? '',
             contact_phone: bi.contact_phone ?? '',
@@ -83,45 +139,40 @@ export default function CalendarPage() {
           })
         }
       } catch (e: any) {
-        console.error(e)
         toast.error(e.message || 'Failed to load contact info')
       } finally {
         setLoadingInfo(false)
       }
+
+      // Prefill provider & saved-secret status
+      try {
+        const res = await fetch(`/api/integrations/calendar?botId=${botId}`, { cache: 'no-store' })
+        const j = await res.json().catch(() => ({}))
+        if (res.ok && j?.data) {
+          setProvider(j.data.calendar_provider || 'calendly')
+          setHasSecret(Boolean(j.data.has_secret))
+        }
+      } catch (_e: any) {
+        // ignore probe errors
+      }
+
+      // Load Google connect status
+      await refreshGoogleStatus()
     })()
   }, [botId])
 
-  // (Optional) RLS debug — safe to remove now that saves go through the API
-  useEffect(() => {
-    if (!botId) return
-    ;(async () => {
-      const { data: authData } = await supabase.auth.getUser()
-      const { data: botRow } = await supabase
-        .from('bots')
-        .select('id, user_id')
-        .eq('id', botId)
-        .single()
-      console.log('AUTH USER ID:', authData?.user?.id, 'BOT USER ID:', botRow?.user_id)
-    })()
-  }, [botId])
-
-  // Save calendar (unchanged)
+  // Save calendar URL
   const handleSaveCalendar = async () => {
     setSavingCal(true)
-    const { error } = await supabase
-      .from('bots')
+    const { error } = await supabase.from('bots')
       .update({ calendar_url: calendarUrl })
       .eq('id', botId)
     setSavingCal(false)
-
-    if (error) {
-      toast.error(error.message)
-      return
-    }
+    if (error) return toast.error(error.message)
     toast.success('Calendar URL saved!')
   }
 
-  // Save bot_info through API (server verifies ownership + uses admin client)
+  // Save contact/offers
   const handleSaveInfo = async () => {
     setSavingInfo(true)
     try {
@@ -130,36 +181,118 @@ export default function CalendarPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(info),
       })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j.error || `Failed to save (${res.status})`)
-      }
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || `Failed to save (${res.status})`)
       toast.success('Contact & offers saved!')
     } catch (e: any) {
-      console.error(e)
       toast.error(e.message || 'Failed to save')
     } finally {
       setSavingInfo(false)
     }
   }
 
+  // Save webhook secret
+  const handleSaveSecret = async () => {
+    if (!secret) return
+    setSavingSecret(true)
+    try {
+      const res = await fetch('/api/integrations/calendar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ botId, provider, secret }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Save failed')
+      setHasSecret(true)
+      setSecret('')
+      toast.success('Webhook secret saved!')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to save secret')
+    } finally {
+      setSavingSecret(false)
+    }
+  }
+
+  // Test webhook (optional)
+  const handleTestWebhook = async () => {
+    const useSecret = testSecret || secret
+    if (!useSecret) return toast.error('Enter a test secret first.')
+    try {
+      const res = await fetch('/api/appointments/webhook', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-provider': provider,
+          'x-webhook-secret': useSecret,
+        },
+        body: JSON.stringify({
+          bot_id: botId,
+          event_id: 'evt_' + Math.random().toString(36).slice(2, 10),
+          status: 'confirmed',
+          start_time: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          timezone: 'UTC',
+        }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || !j?.ok) throw new Error(j.error || 'Webhook failed')
+      toast.success(`Webhook OK: ${j.id}`)
+    } catch (e: any) {
+      toast.error(e.message || 'Webhook test failed')
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 space-y-12">
-      {/* Header */}
       <div className="mb-2 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Setup Calendar & Contact/Offers</h1>
-        <button
-          onClick={() => router.push('/dashboard/calendar')}
-          className="text-blue-600 hover:underline cursor-pointer"
-        >
-          ← Back to list
-        </button>
+        <button onClick={() => router.push('/dashboard/calendar')}
+          className="text-blue-600 hover:underline cursor-pointer">← Back to list</button>
       </div>
 
-      {/* Calendar Section (your original UI) */}
+      {/* Google Calendar Connect (OAuth) */}
+      <section className="space-y-3 rounded-2xl border p-4">
+        <h2 className="text-lg font-semibold">Google Calendar</h2>
+        {gLoading ? (
+          <p className="text-sm text-gray-500">Checking connection…</p>
+        ) : (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm">
+              <div>
+                Status{' '} 
+                {gConnected ? (
+                  <span className={gValid ? 'text-green-600' : 'text-orange-600'}>
+                    {gValid ? 'Connected' : 'Connected (needs refresh)'}
+                  </span>
+                ) : (
+                  <span className="text-red-600">Not connected</span>
+                )}
+              </div>
+              <div>Calendar ID: <span className="text-gray-700">{gCalendarId || '—'}</span></div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleGoogleConnect}
+                className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition"
+              >
+                {gConnected ? (gValid ? 'Reconnect' : 'Refresh Connection') : 'Connect Google'}
+              </button>
+              <button
+                onClick={refreshGoogleStatus}
+                className="cursor-pointer border px-4 py-2 rounded-md"
+              >
+                Recheck
+              </button>
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-gray-500">
+          Connecting lets the bot read busy times and create appointments on your calendar.
+        </p>
+      </section>
+
+      {/* Calendar (embedded URL for external providers or your own form) */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Calendar</h2>
-
         <div>
           <label htmlFor="calendar-url" className="block text-sm font-medium text-gray-700 mb-1">
             Calendar URL
@@ -170,10 +303,9 @@ export default function CalendarPage() {
             value={calendarUrl}
             onChange={(e) => setCalendarUrl(e.target.value)}
             className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-            placeholder="https://calendly.com/..."
+            placeholder="https://calendly.com/...  (or your booking page)"
           />
         </div>
-
         <button
           onClick={handleSaveCalendar}
           disabled={savingCal}
@@ -181,108 +313,134 @@ export default function CalendarPage() {
         >
           {savingCal ? 'Saving...' : 'Save Calendar'}
         </button>
-
         <div className="mt-6">
           <h3 className="text-base font-semibold mb-2">Preview</h3>
           {calendarUrl ? (
-            <iframe
-              src={calendarUrl}
-              className="w-full h-96 border rounded-md"
-              title="Calendar Preview"
-            />
+            <iframe src={calendarUrl} className="w-full h-96 border rounded-md" title="Calendar Preview" />
           ) : (
             <p className="text-sm text-gray-500">No calendar URL set.</p>
           )}
         </div>
       </section>
 
-      {/* Contact & Offers Section */}
+      {/* Webhook Secret */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Webhook Secret</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+            <select
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            >
+              <option value="calendly">Calendly</option>
+              <option value="tidycal">TidyCal</option>
+              <option value="savvycal">SavvyCal</option>
+              <option value="setmore">Setmore</option>
+              <option value="oncehub">OnceHub</option>
+              <option value="acuity">Acuity</option>
+              <option value="google_calendar">Google Calendar</option>
+              <option value="outlook">Outlook</option>
+              <option value="unknown">Other</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Secret</label>
+            <input
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
+              placeholder={hasSecret ? '******** (saved)' : 'Paste provider webhook secret'}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSaveSecret}
+            disabled={savingSecret || !secret}
+            className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md disabled:opacity-50"
+          >
+            {savingSecret ? 'Saving…' : 'Save Secret'}
+          </button>
+
+          {/* optional test helper */}
+          <input
+            type="password"
+            value={testSecret}
+            onChange={(e) => setTestSecret(e.target.value)}
+            placeholder="(optional) Test secret"
+            className="w-56 border border-gray-300 rounded-md px-3 py-2 text-sm"
+          />
+          <button onClick={handleTestWebhook} className="cursor-pointer border px-4 py-2 rounded-md">
+            Send Test Webhook
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-500">
+          Status: {hasSecret ? 'Secret saved' : 'No secret saved'}
+        </p>
+      </section>
+
+      {/* Contact & Offers */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Contact & Offers</h2>
-
         {loadingInfo ? (
-          <p className="text-sm text-gray-500">Loading contact info…</p>
+          <p className="text-sm text-gray-500">Loading…</p>
         ) : (
           <>
-            {/* Contact */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={info.contact_email}
+                <input type="email" value={info.contact_email}
                   onChange={(e) => setField('contact_email')(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-                  placeholder="hello@yourdomain.com"
-                />
+                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input
-                  type="text"
-                  value={info.contact_phone}
+                <input type="text" value={info.contact_phone}
                   onChange={(e) => setField('contact_phone')(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-                  placeholder="+1 555-123-4567"
-                />
+                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm" />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Contact Form URL</label>
-                <input
-                  type="url"
-                  value={info.contact_form_url}
+                <input type="url" value={info.contact_form_url}
                   onChange={(e) => setField('contact_form_url')(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-                  placeholder="https://yourdomain.com/contact"
-                />
+                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm" />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <input
-                  type="text"
-                  value={info.location}
+                <input type="text" value={info.location}
                   onChange={(e) => setField('location')(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-                  placeholder="123 Main St, City, Country"
-                />
+                  className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm" />
               </div>
             </div>
 
-            {/* Offers 1–5 */}
             {([1,2,3,4,5] as const).map((i) => (
               <div key={i} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Offer {i} Title
-                  </label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Offer {i} Title</label>
+                  <input type="text"
                     value={info[`offer_${i}_title` as keyof BotInfo] as string}
                     onChange={(e) => setField(`offer_${i}_title` as keyof BotInfo)(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-                    placeholder={i === 1 ? 'Free Marketing Call' : `Offer ${i} title`}
-                  />
+                    className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Offer {i} URL
-                  </label>
-                  <input
-                    type="url"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Offer {i} URL</label>
+                  <input type="url"
                     value={info[`offer_${i}_url` as keyof BotInfo] as string}
                     onChange={(e) => setField(`offer_${i}_url` as keyof BotInfo)(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-                    placeholder="https://yourdomain.com/offer"
-                  />
+                    className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm" />
                 </div>
               </div>
             ))}
 
-            <button
-              onClick={handleSaveInfo}
-              disabled={savingInfo}
-              className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition"
-            >
+            <button onClick={handleSaveInfo} disabled={savingInfo}
+              className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition">
               {savingInfo ? 'Saving…' : 'Save Contact & Offers'}
             </button>
           </>
