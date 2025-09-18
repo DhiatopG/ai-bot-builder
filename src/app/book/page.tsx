@@ -1,9 +1,11 @@
-// src/app/book/page.tsx
 "use client";
-
 import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import BookingFormUI, { BookingPayload } from "@/components/BookingFormUI";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_APP_URL ??
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 /** Parse "duration" from the querystring; default 30min, clamp 5..180 */
 function parseDuration(s: string | null): number {
@@ -22,10 +24,10 @@ function toLocalISO(date: string, time: string) {
 function addMinutesHHMM(hhmm: string, minutes: number) {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
   const total = h * 60 + m + minutes;
-  const hh = Math.floor((total + 24 * 60) % (24 * 60) / 60)
+  const hh = Math.floor(((total + 24 * 60) % (24 * 60)) / 60)
     .toString()
     .padStart(2, "0");
-  const mm = ((total + 24 * 60) % (24 * 60) % 60).toString().padStart(2, "0");
+  const mm = (((total + 24 * 60) % (24 * 60)) % 60).toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
 
@@ -38,6 +40,10 @@ function BookingPageInner() {
   const isEmbedded = ["1", "true", "yes"].includes(
     (sp.get("embed") || "").toLowerCase()
   );
+
+  // Always send a valid IANA timezone
+  const tz =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   // ---- availability hook (dynamic) ----
   const loadTimeSlots = useMemo(() => {
@@ -52,20 +58,24 @@ function BookingPageInner() {
       conversationId?: string;
     }): Promise<string[]> => {
       const d = date.toISOString().slice(0, 10); // YYYY-MM-DD
-      const url = `/api/availability?botId=${encodeURIComponent(
-        botId || ""
-      )}&date=${d}&tz=${encodeURIComponent(timezone)}`;
-      const res = await fetch(url);
+      const url =
+        `${API_BASE}/api/availability` +
+        `?botId=${encodeURIComponent(botId || "")}` +
+        `&date=${d}` +
+        `&timezone=${encodeURIComponent(timezone || tz)}` +
+        `&duration=${defaultDuration}`;
+      const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return [];
       const json = await res.json().catch(() => ({}));
       return Array.isArray(json?.slots) ? json.slots : [];
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultDuration, tz]);
 
   // ---- submit hook (creates event via your API) ----
   const onSubmit = useMemo(() => {
     return async (payload: BookingPayload) => {
-      // start/end in local-naive + send separate timezone (Google API accepts this)
+      // start/end in local-naive + send separate timezone (server converts)
       const startISO = toLocalISO(payload.date, payload.time);
       const endISO = toLocalISO(
         payload.date,
@@ -73,18 +83,18 @@ function BookingPageInner() {
       );
 
       const body = {
-        botId: botId || payload.bot_id,
+        bot_id: botId || payload.bot_id,
         summary: "Booking",
         description: payload.notes ?? "",
         startISO,
         endISO,
-        timezone: payload.timezone,
+        timezone: payload.timezone || tz,
         invitee_name: payload.name,
         invitee_email: payload.email,
         invitee_phone: payload.phone ?? undefined,
       };
 
-      const res = await fetch("/api/create-event", {
+      const res = await fetch(`${API_BASE}/api/appointments/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -92,11 +102,14 @@ function BookingPageInner() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        return { ok: false as const, error: err?.error || "Failed to create event" };
+        return {
+          ok: false as const,
+          error: err?.error || "Failed to create event",
+        };
       }
       return { ok: true as const };
     };
-  }, [botId]);
+  }, [botId, tz]);
 
   return (
     <BookingFormUI
@@ -106,7 +119,6 @@ function BookingPageInner() {
       isEmbedded={isEmbedded}
       loadTimeSlots={loadTimeSlots}
       onSubmit={onSubmit}
-      // (optional) if you add a /api/availability-days endpoint, pass loadDisabledDays here
     />
   );
 }

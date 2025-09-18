@@ -101,7 +101,27 @@ export default function CalendarPage() {
     const next = typeof window !== 'undefined'
       ? encodeURIComponent(window.location.pathname)
       : encodeURIComponent(`/dashboard/bots/${botId}/calendar`)
-    window.location.href = `/api/integrations/google/start?next=${next}`
+
+    const url = `/api/integrations/google/start?next=${next}`
+
+    // Prefer navigating the TOP window (escapes any iframe/embeds)
+    if (typeof window !== 'undefined' && window.top && window.top !== window.self) {
+      try {
+        window.top.location.assign(url)
+        return
+      } catch (_e) {
+        // fall through to open/new-tab below
+      }
+    }
+
+    // Fallback: try new tab (avoids blockers). If blocked, hard navigate.
+    const w = window.open(url, '_blank', 'noopener,noreferrer')
+    if (w) {
+      // Keeping opener null prevents reverse-tabnabbing; type already allows it.
+      ;(w as Window).opener = null
+    } else {
+      window.location.assign(url)
+    }
   }
   // ------------------------------------------------------
 
@@ -258,7 +278,7 @@ export default function CalendarPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm">
               <div>
-                Status{' '} 
+                Status{' '}
                 {gConnected ? (
                   <span className={gValid ? 'text-green-600' : 'text-orange-600'}>
                     {gValid ? 'Connected' : 'Connected (needs refresh)'}
