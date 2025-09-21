@@ -7,12 +7,9 @@ const API_BASE =
   process.env.NEXT_PUBLIC_APP_URL ??
   (typeof window !== "undefined" ? window.location.origin : "");
 
-/** Parse "duration" from the querystring; default 30min, clamp 5..180 */
-function parseDuration(s: string | null): number {
-  const n = Number(s);
-  if (!Number.isFinite(n)) return 30;
-  const i = Math.round(n);
-  return Math.min(180, Math.max(5, i));
+/** Always use 30 minutes (min 30, max 180) */
+function parseDuration(_s: string | null): number {
+  return 30;
 }
 
 /** Build "YYYY-MM-DDTHH:mm:00" from date ("YYYY-MM-DD") and time ("HH:mm") */
@@ -36,14 +33,13 @@ function BookingPageInner() {
 
   const botId = sp.get("botId") || undefined;
   const conversationId = sp.get("conversationId") || undefined;
-  const defaultDuration = parseDuration(sp.get("duration"));
+  const defaultDuration = parseDuration(sp.get("duration")); // -> always 30
   const isEmbedded = ["1", "true", "yes"].includes(
     (sp.get("embed") || "").toLowerCase()
   );
 
   // Always send a valid IANA timezone
-  const tz =
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   // ---- availability hook (dynamic) ----
   const loadTimeSlots = useMemo(() => {
@@ -62,8 +58,8 @@ function BookingPageInner() {
         `${API_BASE}/api/availability` +
         `?botId=${encodeURIComponent(botId || "")}` +
         `&date=${d}` +
-        `&timezone=${encodeURIComponent(timezone || tz)}` +
-        `&duration=${defaultDuration}`;
+        `&tz=${encodeURIComponent(timezone || tz)}` + // IMPORTANT: server expects tz=
+        `&duration=${defaultDuration}`;               // 30 minutes
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return [];
       const json = await res.json().catch(() => ({}));
@@ -79,7 +75,7 @@ function BookingPageInner() {
       const startISO = toLocalISO(payload.date, payload.time);
       const endISO = toLocalISO(
         payload.date,
-        addMinutesHHMM(payload.time, payload.duration)
+        addMinutesHHMM(payload.time, payload.duration) // payload.duration will be 30
       );
 
       const body = {
@@ -115,7 +111,7 @@ function BookingPageInner() {
     <BookingFormUI
       botId={botId}
       conversationId={conversationId}
-      defaultDuration={defaultDuration}
+      defaultDuration={defaultDuration} // -> 30
       isEmbedded={isEmbedded}
       loadTimeSlots={loadTimeSlots}
       onSubmit={onSubmit}

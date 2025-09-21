@@ -1,3 +1,4 @@
+// src/lib/chat/actions/booking.ts
 import { respondAndLog } from './respondAndLog';
 
 export function computeBookingFlags({ userLast, lastAssistantText, intent }: {
@@ -68,32 +69,34 @@ export async function handleBookingAction({
     });
   }
 
-  // open_calendar
+  // open_calendar (SILENT)
   if (biz.bookingProvider === 'iframe' && biz.bookingIframe) {
-    const assistantText = ' ';
+    const assistantText = '\u200B'; // zero-width space → no visible text
     return respondAndLog(admin, {
       botId: ctx.botId, conversation_id: ctx.conversation_id, user_auth_id: ctx.user_auth_id,
       userLast: ctx.userLast, assistantText, intent: String(ctx.intent ?? '')
     }, {
-      answer: ' ',
+      answer: '\u200B', // keep UI from showing fallback text
       iframe: biz.bookingIframe,
       embed_outcome: 'iframe',
       embed_provider: (() => { try { return new URL(biz.bookingIframe!).hostname } catch { return '' } })()
     });
   }
   if (biz.bookingProvider === 'link' && biz.bookingUrl) {
-    const leadIn = await rewriteWithTone('You can book directly here:');
-    const finalLeadIn = leadJustCompleted ? `${leadPreface}${leadIn}` : leadIn;
+    // stay silent while providing the calendar link payload
+    const assistantText = '\u200B';
     return respondAndLog(admin, {
       botId: ctx.botId, conversation_id: ctx.conversation_id, user_auth_id: ctx.user_auth_id,
-      userLast: ctx.userLast, assistantText: finalLeadIn, intent: String(ctx.intent ?? '')
+      userLast: ctx.userLast, assistantText, intent: String(ctx.intent ?? '')
     }, {
-      answer: finalLeadIn,
+      answer: '\u200B', // no visible assistant copy
       calendar_link: biz.bookingUrl,
       embed_outcome: 'link',
       embed_provider: (() => { try { return new URL(biz.bookingUrl!).hostname } catch { return '' } })()
     });
   }
+
+  // fallback (not opening calendar)
   const fallback = await rewriteWithTone("I can help you schedule. What's a good time for you?");
   const finalFallback = leadJustCompleted ? `${leadPreface}${fallback}` : fallback;
   return respondAndLog(admin, {

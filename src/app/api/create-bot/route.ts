@@ -174,6 +174,29 @@ ${cleanedScraped.slice(0, 5000)}
     }
 
     const newBot = insertedBots?.[0];
+
+    if (!newBot?.id) {
+      return NextResponse.json({ success: false, error: 'Failed to create bot' }, { status: 500 });
+    }
+
+    // ⭐ Auto-set per-bot booking URL in `public.bots`
+    try {
+      const calendarUrl = `/book?botId=${newBot.id}&embed=1`; // match your DB format
+      const { error: updErr } = await supabase
+        .from('bots')
+        .update({ calendar_url: calendarUrl })
+        .eq('id', newBot.id);
+
+      if (updErr) {
+        console.error('BOTS calendar_url update error:', updErr.message);
+      } else {
+        console.log('✅ bots.calendar_url set:', calendarUrl);
+      }
+    } catch (e) {
+      console.error('❌ BOTS calendar_url update exception:', e);
+    }
+
+    // (Optional) kick off embedding
     try {
       const baseUrl =
         process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
@@ -187,7 +210,12 @@ ${cleanedScraped.slice(0, 5000)}
       console.error('❌ Failed to call /api/embed-chunks:', embedErr);
     }
 
-    return NextResponse.json({ success: true });
+    // Return bot id & calendar_url so the client can show it immediately
+    return NextResponse.json({
+      success: true,
+      bot_id: newBot.id,
+      calendar_url: `/book?botId=${newBot.id}&embed=1`,
+    });
   } catch (err: any) {
     console.error('❌ FULL ERROR:', err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

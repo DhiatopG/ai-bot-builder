@@ -1,7 +1,7 @@
 // src/app/dashboard/calendar/[botId]/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/browser'
 import toast from 'react-hot-toast'
@@ -17,6 +17,38 @@ type BotInfo = {
   offer_4_title: string; offer_4_url: string
   offer_5_title: string; offer_5_url: string
 }
+
+// --- helpers ---------------------------------------------------
+function toRelativeBooking(urlOrPath: string, origin?: string): string {
+  try {
+    // If it's already a relative path, keep it
+    if (/^\/(?!\/)/.test(urlOrPath)) return urlOrPath.trim()
+
+    // Try to parse as URL; if same-origin -> store relative (pathname + search)
+    const o = origin || (typeof window !== 'undefined' ? window.location.origin : '')
+    const u = new URL(urlOrPath, o)
+    if (o && u.origin === o) {
+      return (u.pathname + u.search).trim() || '/'
+    }
+    // Different origin: keep full absolute URL
+    return u.toString()
+  } catch {
+    // If parsing fails, fallback to what we got (or empty)
+    return (urlOrPath || '').trim()
+  }
+}
+
+function toAbsolute(urlOrPath: string): string {
+  try {
+    if (/^https?:\/\//i.test(urlOrPath)) return urlOrPath
+    const base = typeof window !== 'undefined' ? window.location.origin : ''
+    if (!base) return urlOrPath // SSR-safe fallback
+    return new URL(urlOrPath || '/', base).toString()
+  } catch {
+    return urlOrPath
+  }
+}
+// --------------------------------------------------------------
 
 export default function CalendarPage() {
   const { botId } = useParams() as { botId: string }
@@ -117,7 +149,6 @@ export default function CalendarPage() {
     // Fallback: try new tab (avoids blockers). If blocked, hard navigate.
     const w = window.open(url, '_blank', 'noopener,noreferrer')
     if (w) {
-      // Keeping opener null prevents reverse-tabnabbing; type already allows it.
       ;(w as Window).opener = null
     } else {
       window.location.assign(url)
@@ -131,13 +162,17 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!botId) return
     ;(async () => {
-      // Load calendar URL
+      // Load calendar URL from bots table
       const { data: botData } = await supabase
         .from('bots')
         .select('calendar_url')
         .eq('id', botId)
         .maybeSingle()
-      if (botData?.calendar_url) setCalendarUrl(botData.calendar_url)
+
+      // If empty in DB, auto-fallback to your built booking page
+      const fallback = `/book?botId=${botId}`
+      const value = (botData?.calendar_url && botData.calendar_url.trim()) ? botData.calendar_url : fallback
+      setCalendarUrl(value)
 
       // Load contact/offers via API
       setLoadingInfo(true)
@@ -181,15 +216,31 @@ export default function CalendarPage() {
     })()
   }, [botId])
 
+  const previewUrl = useMemo(() => {
+    // Always show a valid absolute URL in the preview
+    const value = (calendarUrl && calendarUrl.trim()) ? calendarUrl : `/book?botId=${botId}`
+    return toAbsolute(value)
+  }, [calendarUrl, botId])
+
   // Save calendar URL
   const handleSaveCalendar = async () => {
     setSavingCal(true)
-    const { error } = await supabase.from('bots')
-      .update({ calendar_url: calendarUrl })
-      .eq('id', botId)
-    setSavingCal(false)
-    if (error) return toast.error(error.message)
-    toast.success('Calendar URL saved!')
+    try {
+      // Normalize to relative if it's your own domain; keep absolute for 3rd-party providers
+      const normalized = toRelativeBooking(calendarUrl)
+
+      const { error } = await supabase.from('bots')
+        .update({ calendar_url: normalized })
+        .eq('id', botId)
+
+      if (error) throw error
+      setCalendarUrl(normalized)
+      toast.success('Calendar URL saved!')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to save calendar URL')
+    } finally {
+      setSavingCal(false)
+    }
   }
 
   // Save contact/offers
@@ -323,8 +374,11 @@ export default function CalendarPage() {
             value={calendarUrl}
             onChange={(e) => setCalendarUrl(e.target.value)}
             className="w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
-            placeholder="https://calendly.com/...  (or your booking page)"
+            placeholder={`/book?botId=${botId}  (or a provider URL like https://calendly.com/...)`}
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Tip: If you paste your own domain URL, we’ll save it as a relative path for portability.
+          </p>
         </div>
         <button
           onClick={handleSaveCalendar}
@@ -335,8 +389,8 @@ export default function CalendarPage() {
         </button>
         <div className="mt-6">
           <h3 className="text-base font-semibold mb-2">Preview</h3>
-          {calendarUrl ? (
-            <iframe src={calendarUrl} className="w-full h-96 border rounded-md" title="Calendar Preview" />
+          {previewUrl ? (
+            <iframe src={previewUrl} className="w-full h-96 border rounded-md" title="Calendar Preview" />
           ) : (
             <p className="text-sm text-gray-500">No calendar URL set.</p>
           )}

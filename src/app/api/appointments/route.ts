@@ -38,10 +38,9 @@ function deriveWindow(range: string | undefined, leadMinutes = 0) {
       return { from: z(from), to: z(endTomorrowUTC) }
     }
     default: {
-      const endTodayUTC = new Date(Date.UTC(
-        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0
-      ))
-      return { from: z(leadFrom), to: z(endTodayUTC) }
+      // ✅ Default = upcoming 30 days (not only until end of today)
+      const to = new Date(leadFrom.getTime() + 30 * 24 * 3600 * 1000)
+      return { from: z(leadFrom), to: z(to) }
     }
   }
 }
@@ -167,12 +166,26 @@ export async function GET(req: NextRequest) {
   // Use the resolved client (admin for apiKey/dev, RLS for cookie/bearer)
   const supabase = auth.supabase
 
+  // Helper to apply time window across start_time OR starts_at
+  const applyTimeRange = (q: any) => {
+    const ors: string[] = []
+    if (from && to) {
+      ors.push(`and(start_time.gte.${from},start_time.lt.${to})`)
+      ors.push(`and(starts_at.gte.${from},starts_at.lt.${to})`)
+    } else if (from && !to) {
+      ors.push(`start_time.gte.${from}`, `starts_at.gte.${from}`)
+    } else if (!from && to) {
+      ors.push(`start_time.lt.${to}`, `starts_at.lt.${to}`)
+    }
+    if (ors.length) q = q.or(ors.join(','))
+    return q
+  }
+
   if (format === 'counts') {
     const base = () => {
       let q = supabase.from('appointments').select('id', { head: true, count: 'exact' }).eq('bot_id', botId)
-      if (from) q = q.gte('starts_at', from)
-      if (to)   q = q.lt('starts_at', to)
       if (conversationId) q = q.eq('conversation_id', conversationId)
+      q = applyTimeRange(q)
       return q
     }
     const [qTotal, qConfirmed, qRescheduled, qCanceled] = await Promise.all([
@@ -181,20 +194,28 @@ export async function GET(req: NextRequest) {
       base().eq('status', 'rescheduled'),
       base().eq('status', 'canceled'),
     ])
+
     const total = qTotal.count ?? 0
     const confirmed = qConfirmed.count ?? 0
     const rescheduled = qRescheduled.count ?? 0
     const canceled = qCanceled.count ?? 0
-    const bookings = total - canceled
-    return NextResponse.json({ ok: true, counts: { total, confirmed, rescheduled, canceled, bookings },
-      filters: { botId, status, conversationId, from, to, range: range || null, lead } })
+    const bookings = confirmed + rescheduled // ✅ more accurate
+
+    return NextResponse.json({
+      ok: true,
+      counts: { total, confirmed, rescheduled, canceled, bookings },
+      filters: { botId, status, conversationId, from, to, range: range || null, lead }
+    })
   }
 
-  let q = supabase.from('appointments').select('*').eq('bot_id', botId).order('starts_at', { ascending: false }).limit(500)
+  // ROWS for table: order by both, show up to 500
+  let q = supabase.from('appointments').select('*').eq('bot_id', botId).limit(500)
   if (status) q = q.eq('status', status)
   if (conversationId) q = q.eq('conversation_id', conversationId)
-  if (from) q = q.gte('starts_at', from)
-  if (to)   q = q.lt('starts_at', to)
+  q = applyTimeRange(q)
+  q = q.order('start_time', { ascending: false, nullsFirst: false })
+       .order('starts_at',  { ascending: false, nullsFirst: false })
+
   const { data, error } = await q
   if (error) {
     if (debug) console.error(`[appointments][${reqId}] ROWS_ERROR`, error)
