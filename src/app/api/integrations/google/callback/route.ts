@@ -1,4 +1,7 @@
 // src/app/api/integrations/google/callback/route.ts
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -35,9 +38,11 @@ export async function GET(req: Request) {
 
   // User session (cookies)
   const supabase = await createServerClient()
-  const { data: { user }, error: userErr } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.json({ error: 'unauthorized', detail: userErr?.message || 'no user session in callback' }, { status: 401 })
+    // redirect to login and bounce back to this exact callback after auth
+    const login = new URL(`/login?next=${encodeURIComponent(url.pathname + url.search)}`, url.origin)
+    return NextResponse.redirect(login)
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID
