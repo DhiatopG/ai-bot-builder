@@ -59,13 +59,12 @@ function BookingPageInner() {
         `?botId=${encodeURIComponent(botId || "")}` +
         `&date=${d}` +
         `&tz=${encodeURIComponent(timezone || tz)}` + // IMPORTANT: server expects tz=
-        `&duration=${defaultDuration}`;               // 30 minutes
+        `&duration=${defaultDuration}`; // 30 minutes
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return [];
       const json = await res.json().catch(() => ({}));
       return Array.isArray(json?.slots) ? json.slots : [];
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultDuration, tz]);
 
   // ---- submit hook (creates event via your API) ----

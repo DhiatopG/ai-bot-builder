@@ -23,6 +23,9 @@ import { useProtectedPage } from '@/hooks/useProtectedPage'
 // NEW: monthly appointments stat component
 import AllAppointmentsSuccessStat from '@/components/AllAppointmentsSuccessStat'
 
+// NEW: mount the first-login tour
+import FirstLoginTour from '@/components/onboarding/FirstLoginTour'
+
 export default function DashboardPage() {
   const router = useRouter()
   const { user, loading } = useProtectedPage()
@@ -70,20 +73,24 @@ export default function DashboardPage() {
     router.replace('/login')
   }
 
+  // Added tour keys per item so we can attach data-tour
   const navItems = [
-    { icon: Home, label: 'Dashboard', path: '/dashboard' },
-    { icon: Bot, label: 'Bots', path: '/dashboard/bots', useLink: true },
-    { icon: Users, label: 'Leads', path: '/dashboard/leads' },
-    { icon: Upload, label: 'Upload', path: '/dashboard/upload', useLink: true },
-    { icon: BarChart3, label: 'Analytics', path: '/dashboard' },
-    { icon: Bot, label: 'Integrations', path: '/dashboard/integrations' },
-    { icon: Settings, label: 'Settings', path: '/dashboard/settings', useLink: true },
-    { icon: Calendar, label: 'Calendar', path: '/dashboard/calendar', useLink: true },
-    { icon: HelpCircle, label: 'Help', path: '/dashboard' },
+    { icon: Home,  label: 'Dashboard',    path: '/dashboard',                 tourKey: 'nav-dashboard' },
+    { icon: Bot,   label: 'Bots',         path: '/dashboard/bots',            useLink: true, tourKey: 'nav-bots' },
+    { icon: Users, label: 'Leads',        path: '/dashboard/leads',           tourKey: 'nav-leads' },
+    { icon: Upload,label: 'Upload',       path: '/dashboard/upload',          useLink: true, tourKey: 'nav-upload' }, // used as "Knowledge"
+    { icon: BarChart3, label: 'Analytics', path: '/dashboard',                tourKey: 'nav-analytics' },
+    { icon: Bot,   label: 'Integrations', path: '/dashboard/integrations',    tourKey: 'nav-integrations' },
+    { icon: Settings, label: 'Settings',  path: '/dashboard/settings',        useLink: true, tourKey: 'nav-settings' },
+    { icon: Calendar, label: 'Calendar',  path: '/dashboard/calendar',        useLink: true, tourKey: 'nav-calendar' },
+    { icon: HelpCircle, label: 'Help',    path: '/dashboard',                 tourKey: 'nav-help' },
   ]
 
   return (
     <div className="min-h-screen flex bg-white">
+      {/* Mount the tour globally once */}
+      <FirstLoginTour />
+
       {isMobileMenuOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
@@ -115,6 +122,7 @@ export default function DashboardPage() {
                     href={item.path}
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-[#003875] hover:text-white transition-colors"
+                    data-tour={item.tourKey}
                   >
                     <item.icon size={20} />
                     <span>{item.label}</span>
@@ -126,6 +134,7 @@ export default function DashboardPage() {
                       router.push(item.path)
                     }}
                     className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-[#003875] hover:text-white transition-colors"
+                    data-tour={item.tourKey}
                   >
                     <item.icon size={20} />
                     <span>{item.label}</span>
@@ -175,12 +184,24 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => router.push('/dashboard/create')}
-              className="bg-[#1E90FF] text-white px-3 lg:px-6 py-2 lg:py-3 rounded-lg text-sm lg:text-base hover:bg-[#1873CC] transition-colors"
-            >
-              Create New Bot
-            </button>
+            <div className="flex items-center">
+              {/* NEW: Replay tour button (added, nothing else changed) */}
+              <button
+                onClick={() => (window as any)?.replayIn60Tour?.()}
+                className="border border-[#1E90FF] text-[#1E90FF] px-3 lg:px-4 py-2 rounded-lg text-sm lg:text-base hover:bg-[#EAF4FF] transition-colors mr-2"
+                title="Replay onboarding tour"
+              >
+                Replay tour
+              </button>
+
+              <button
+                onClick={() => router.push('/dashboard/create')}
+                className="bg-[#1E90FF] text-white px-3 lg:px-6 py-2 lg:py-3 rounded-lg text-sm lg:text-base hover:bg-[#1873CC] transition-colors"
+                data-tour="btn-create-bot"
+              >
+                Create New Bot
+              </button>
+            </div>
           </div>
         </header>
 

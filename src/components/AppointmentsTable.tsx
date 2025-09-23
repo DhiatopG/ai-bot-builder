@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useMemo, useState } from 'react'
-import { Calendar, Clock, User, Mail, Eye, X, Search } from 'lucide-react'
+import { Calendar, Clock, User, Mail, Eye, X, Search, Ban } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export type UIAppointment = {
   id: string
@@ -13,25 +14,40 @@ export type UIAppointment = {
   service?: string
   notes?: string
   duration?: string
+  externalEventId?: string | null   // NEW: for Google cancellation
 }
 
 type Props = {
   title?: string
   appointments: UIAppointment[]
+  botId: string                      // NEW: needed for cancel API
+  showSummary?: boolean              // keep/disable the 4 local cards
+  onChanged?: () => void             // *** ADDED: optional refresh callback
 }
 
-export default function AppointmentsTable({ title = 'Appointments Dashboard', appointments }: Props) {
+export default function AppointmentsTable({
+  title = 'Appointments Dashboard',
+  appointments,
+  botId,
+  showSummary = true,
+  onChanged,                          // *** ADDED
+}: Props) {
   const [selectedAppointment, setSelectedAppointment] = useState<UIAppointment | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [rows, setRows] = useState<UIAppointment[]>(appointments)
+  const [cancelling, setCancelling] = useState<string | null>(null)
+
+  // keep local rows in sync if parent refetches
+  React.useEffect(() => setRows(appointments), [appointments])
 
   const filteredAppointments = useMemo(() => {
     const q = searchTerm.toLowerCase()
-    return (appointments || []).filter(a =>
+    return (rows || []).filter(a =>
       a.clientName?.toLowerCase().includes(q) ||
       a.email?.toLowerCase().includes(q) ||
       (a.service || '').toLowerCase().includes(q)
     )
-  }, [appointments, searchTerm])
+  }, [rows, searchTerm])
 
   const statusCounts = useMemo(() => {
     return filteredAppointments.reduce((acc, a) => {
@@ -57,6 +73,37 @@ export default function AppointmentsTable({ title = 'Appointments Dashboard', ap
     }
   }
 
+  const cancelOnGoogle = async (row: UIAppointment) => {
+    if (!row.externalEventId) return
+    setCancelling(row.id)
+    try {
+      const res = await fetch('/api/appointments/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ botId, eventId: row.externalEventId }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j?.error) throw new Error(j?.error || `Cancel failed (${res.status})`)
+
+      // Optimistic local update
+      setRows(prev =>
+        prev.map(r => r.id === row.id ? { ...r, status: 'Canceled' } as UIAppointment : r)
+      )
+      if (selectedAppointment?.id === row.id) {
+        setSelectedAppointment({ ...row, status: 'Canceled' })
+      }
+
+      // *** ADDED: notify parent to refetch if it wants
+      onChanged?.()
+
+      toast.success('Appointment canceled on Google Calendar.')
+    } catch (e: any) {
+      toast.error(e?.message || 'Cancel failed')
+    } finally {
+      setCancelling(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
@@ -66,56 +113,58 @@ export default function AppointmentsTable({ title = 'Appointments Dashboard', ap
           <p className="text-gray-600">Manage and track all your appointments</p>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total</p>
-                <p className="text-2xl font-bold text-blue-600">{filteredAppointments.length}</p>
-              </div>
-              <div className="p-3 bg-blue-100 rounded-full">
-                <Calendar className="h-6 w-6 text-blue-600" />
+        {/* Summary Cards (table-local, optional) */}
+        {showSummary && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total</p>
+                  <p className="text-2xl font-bold text-blue-600">{filteredAppointments.length}</p>
+                </div>
+                <div className="p-3 bg-blue-100 rounded-full">
+                  <Calendar className="h-6 w-6 text-blue-600" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Confirmed</p>
-                <p className="text-2xl font-bold text-green-600">{statusCounts['Confirmed'] || 0}</p>
-              </div>
-              <div className="p-3 bg-green-100 rounded-full">
-                <User className="h-6 w-6 text-green-600" />
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Confirmed</p>
+                  <p className="text-2xl font-bold text-green-600">{statusCounts['Confirmed'] || 0}</p>
+                </div>
+                <div className="p-3 bg-green-100 rounded-full">
+                  <User className="h-6 w-6 text-green-600" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Rescheduled</p>
-                <p className="text-2xl font-bold text-yellow-600">{statusCounts['Rescheduled'] || 0}</p>
-              </div>
-              <div className="p-3 bg-yellow-100 rounded-full">
-                <Clock className="h-6 w-6 text-yellow-600" />
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Rescheduled</p>
+                  <p className="text-2xl font-bold text-yellow-600">{statusCounts['Rescheduled'] || 0}</p>
+                </div>
+                <div className="p-3 bg-yellow-100 rounded-full">
+                  <Clock className="h-6 w-6 text-yellow-600" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Canceled</p>
-                <p className="text-2xl font-bold text-red-600">{statusCounts['Canceled'] || 0}</p>
-              </div>
-              <div className="p-3 bg-red-100 rounded-full">
-                <X className="h-6 w-6 text-red-600" />
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Canceled</p>
+                  <p className="text-2xl font-bold text-red-600">{statusCounts['Canceled'] || 0}</p>
+                </div>
+                <div className="p-3 bg-red-100 rounded-full">
+                  <X className="h-6 w-6 text-red-600" />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Search Bar */}
         <div className="mb-6">
@@ -147,6 +196,7 @@ export default function AppointmentsTable({ title = 'Appointments Dashboard', ap
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAppointments.map((a) => {
                   const { date, time } = formatDateTime(a.dateTime)
+                  const canCancel = a.status === 'Confirmed' && !!a.externalEventId
                   return (
                     <tr
                       key={a.id}
@@ -183,13 +233,25 @@ export default function AppointmentsTable({ title = 'Appointments Dashboard', ap
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setSelectedAppointment(a) }}
-                          className="text-blue-600 hover:text-blue-900 flex items-center"
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </button>
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSelectedAppointment(a) }}
+                            className="text-blue-600 hover:text-blue-900 flex items-center"
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </button>
+
+                          <button
+                            onClick={(e) => { e.stopPropagation(); cancelOnGoogle(a) }}
+                            disabled={!canCancel || cancelling === a.id}
+                            className={`flex items-center ${canCancel ? 'text-red-600 hover:text-red-800' : 'text-gray-300 cursor-not-allowed'}`}
+                            title={a.externalEventId ? 'Cancel on Google Calendar' : 'No Google event id'}
+                          >
+                            <Ban className="h-4 w-4 mr-1" />
+                            {cancelling === a.id ? 'Cancelling…' : 'Cancel'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -255,22 +317,6 @@ export default function AppointmentsTable({ title = 'Appointments Dashboard', ap
                     </span>
                   </div>
                 </div>
-                {selectedAppointment.phone && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-900">{selectedAppointment.phone}</span>
-                    </div>
-                  </div>
-                )}
-                {selectedAppointment.service && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Service</label>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-900">{selectedAppointment.service}</span>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {selectedAppointment.duration && (
@@ -297,9 +343,15 @@ export default function AppointmentsTable({ title = 'Appointments Dashboard', ap
               <button onClick={() => setSelectedAppointment(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
                 Close
               </button>
-              <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-                Edit Appointment
-              </button>
+              {selectedAppointment.status === 'Confirmed' && selectedAppointment.externalEventId && (
+                <button
+                  onClick={() => cancelOnGoogle(selectedAppointment)}
+                  disabled={cancelling === selectedAppointment.id}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+                >
+                  {cancelling === selectedAppointment.id ? 'Cancelling…' : 'Cancel Appointment'}
+                </button>
+              )}
             </div>
           </div>
         </div>
