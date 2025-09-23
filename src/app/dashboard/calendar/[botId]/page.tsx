@@ -21,19 +21,14 @@ type BotInfo = {
 // --- helpers ---------------------------------------------------
 function toRelativeBooking(urlOrPath: string, origin?: string): string {
   try {
-    // If it's already a relative path, keep it
     if (/^\/(?!\/)/.test(urlOrPath)) return urlOrPath.trim()
-
-    // Try to parse as URL; if same-origin -> store relative (pathname + search)
     const o = origin || (typeof window !== 'undefined' ? window.location.origin : '')
     const u = new URL(urlOrPath, o)
     if (o && u.origin === o) {
       return (u.pathname + u.search).trim() || '/'
     }
-    // Different origin: keep full absolute URL
     return u.toString()
   } catch {
-    // If parsing fails, fallback to what we got (or empty)
     return (urlOrPath || '').trim()
   }
 }
@@ -42,7 +37,7 @@ function toAbsolute(urlOrPath: string): string {
   try {
     if (/^https?:\/\//i.test(urlOrPath)) return urlOrPath
     const base = typeof window !== 'undefined' ? window.location.origin : ''
-    if (!base) return urlOrPath // SSR-safe fallback
+    if (!base) return urlOrPath
     return new URL(urlOrPath || '/', base).toString()
   } catch {
     return urlOrPath
@@ -85,20 +80,29 @@ export default function CalendarPage() {
   const [gConnected, setGConnected] = useState(false)
   const [gValid, setGValid] = useState(false)
   const [gCalendarId, setGCalendarId] = useState<string | null>(null)
+  const [authUserId, setAuthUserId] = useState<string | null>(null)
 
-  const refreshGoogleStatus = async () => {
+  // hydration-safe mount flag
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
+  // >>> Only show toasts when user clicks Recheck
+  const refreshGoogleStatus = async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent
+    const toastId = silent ? undefined : toast.loading('Rechecking Google connection…')
     setGLoading(true)
     try {
       const { data: auth } = await supabase.auth.getUser()
-      const uid = auth?.user?.id
+      const uid = auth?.user?.id || null
+      setAuthUserId(uid)
       if (!uid) {
         setGConnected(false)
         setGValid(false)
         setGCalendarId(null)
+        if (!silent) toast.success('Refreshed', { id: toastId })
         return
       }
 
-      // Read your own connection row (RLS-secured)
       const { data: row, error } = await supabase
         .from('integrations_calendar')
         .select('access_token, refresh_token, expires_at, calendar_id')
@@ -108,7 +112,7 @@ export default function CalendarPage() {
       if (error) throw error
 
       if (row) {
-        const exp = Number(row.expires_at ?? 0) // int8 epoch seconds
+        const exp = Number(row.expires_at ?? 0)
         const now = Math.floor(Date.now() / 1000)
         setGConnected(Boolean(row.access_token) && Boolean(row.refresh_token))
         setGValid(exp > (now + 5 * 60))
@@ -118,8 +122,10 @@ export default function CalendarPage() {
         setGValid(false)
         setGCalendarId(null)
       }
-    } catch (_e: any) {
-      // silent; just mark not connected
+
+      if (!silent) toast.success('Refreshed', { id: toastId })
+    } catch (e: any) {
+      if (!silent) toast.error(e?.message || 'Failed to recheck', { id: toastId })
       setGConnected(false)
       setGValid(false)
       setGCalendarId(null)
@@ -128,33 +134,53 @@ export default function CalendarPage() {
     }
   }
 
+  // single navigation path + guard to avoid double-open
+  let _oauthInFlight = false
   const handleGoogleConnect = () => {
-    // Kick off OAuth; server saves tokens & returns to this page
+    if (_oauthInFlight) return
+    _oauthInFlight = true
+
     const next = typeof window !== 'undefined'
       ? encodeURIComponent(window.location.pathname)
       : encodeURIComponent(`/dashboard/bots/${botId}/calendar`)
 
     const url = `/api/integrations/google/start?next=${next}`
+    window.location.assign(url)
+  }
 
-    // Prefer navigating the TOP window (escapes any iframe/embeds)
-    if (typeof window !== 'undefined' && window.top && window.top !== window.self) {
-      try {
-        window.top.location.assign(url)
-        return
-      } catch (_e) {
-        // fall through to open/new-tab below
+  // Disconnect
+  const handleGoogleDisconnect = async () => {
+    if (!gConnected) return
+    setGLoading(true)
+    try {
+      let uid = authUserId
+      if (!uid) {
+        const { data } = await supabase.auth.getUser()
+        uid = data?.user?.id || null
       }
-    }
+      if (!uid) {
+        toast.error('Not signed in')
+        return
+      }
 
-    // Fallback: try new tab (avoids blockers). If blocked, hard navigate.
-    const w = window.open(url, '_blank', 'noopener,noreferrer')
-    if (w) {
-      ;(w as Window).opener = null
-    } else {
-      window.location.assign(url)
+      const res = await fetch('/api/calendar/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: uid }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j?.error) throw new Error(j.error || `Failed (${res.status})`)
+
+      setGConnected(false)
+      setGValid(false)
+      setGCalendarId(null)
+      toast.success('Disconnected from Google Calendar')
+    } catch (e: any) {
+      toast.error(e.message || 'Disconnect failed')
+    } finally {
+      setGLoading(false)
     }
   }
-  // ------------------------------------------------------
 
   const setField = (key: keyof BotInfo) => (v: string) =>
     setInfo(prev => ({ ...prev, [key]: v }))
@@ -169,7 +195,6 @@ export default function CalendarPage() {
         .eq('id', botId)
         .maybeSingle()
 
-      // If empty in DB, auto-fallback to your built booking page
       const fallback = `/book?botId=${botId}`
       const value = (botData?.calendar_url && botData.calendar_url.trim()) ? botData.calendar_url : fallback
       setCalendarUrl(value)
@@ -211,28 +236,27 @@ export default function CalendarPage() {
         // ignore probe errors
       }
 
-      // Load Google connect status
-      await refreshGoogleStatus()
+      // Load Google connect status (silent on first load)
+      await refreshGoogleStatus({ silent: true })
     })()
   }, [botId])
 
+  // preview URL handling
   const previewUrl = useMemo(() => {
-    // Always show a valid absolute URL in the preview
     const value = (calendarUrl && calendarUrl.trim()) ? calendarUrl : `/book?botId=${botId}`
-    return toAbsolute(value)
+    return toRelativeBooking(value)
   }, [calendarUrl, botId])
+
+  const iframeSrc = useMemo(() => (mounted ? toAbsolute(previewUrl) : previewUrl), [mounted, previewUrl])
 
   // Save calendar URL
   const handleSaveCalendar = async () => {
     setSavingCal(true)
     try {
-      // Normalize to relative if it's your own domain; keep absolute for 3rd-party providers
       const normalized = toRelativeBooking(calendarUrl)
-
       const { error } = await supabase.from('bots')
         .update({ calendar_url: normalized })
         .eq('id', botId)
-
       if (error) throw error
       setCalendarUrl(normalized)
       toast.success('Calendar URL saved!')
@@ -342,16 +366,29 @@ export default function CalendarPage() {
             </div>
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={handleGoogleConnect}
-                className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition"
+                disabled={gConnected && gValid}
+                className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition disabled:opacity-50"
               >
-                {gConnected ? (gValid ? 'Reconnect' : 'Refresh Connection') : 'Connect Google'}
+                {gConnected ? (gValid ? 'Connected' : 'Refresh Connection') : 'Connect Google'}
               </button>
               <button
-                onClick={refreshGoogleStatus}
-                className="cursor-pointer border px-4 py-2 rounded-md"
+                type="button"
+                onClick={() => refreshGoogleStatus({ silent: false })} // show "Refreshed"
+                disabled={gLoading}
+                className="cursor-pointer border px-4 py-2 rounded-md disabled:opacity-50"
               >
                 Recheck
+              </button>
+              <button
+                type="button"
+                onClick={handleGoogleDisconnect}
+                disabled={!gConnected || gLoading}
+                className="cursor-pointer border border-red-500 text-red-600 px-4 py-2 rounded-md hover:bg-red-50 disabled:opacity-50"
+                title="Disconnect Google Calendar for this user"
+              >
+                Disconnect
               </button>
             </div>
           </div>
@@ -390,7 +427,7 @@ export default function CalendarPage() {
         <div className="mt-6">
           <h3 className="text-base font-semibold mb-2">Preview</h3>
           {previewUrl ? (
-            <iframe src={previewUrl} className="w-full h-96 border rounded-md" title="Calendar Preview" />
+            <iframe src={iframeSrc} className="w-full h-96 border rounded-md" title="Calendar Preview" />
           ) : (
             <p className="text-sm text-gray-500">No calendar URL set.</p>
           )}
