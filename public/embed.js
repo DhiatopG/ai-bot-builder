@@ -115,6 +115,14 @@
       /* Inside iframe document must be transparent */
       html, body, #__next { background: transparent !important; }
       html, body { margin: 0 !important; padding: 0 !important; }
+
+      /* ★ Mobile override: remove card rounding/shadow when fullscreen */
+      @media (max-width: 500px) {
+        #in60-iframe-${botId} {
+          border-radius: 0 !important;
+          filter: none !important;
+        }
+      }
     `;
     document.head.appendChild(styleTag);
   }
@@ -209,16 +217,43 @@
   }
 
   // ---------- helpers ----------
+  // ★ Reworked for TRUE mobile fullscreen and desktop card
   function applyResponsive() {
     if (!container) return;
     var isMobile = Math.min(window.innerWidth, window.innerHeight) < 500;
-    container.style.width  = isMobile ? '100vw' : panelWidth;
-    container.style.height = isMobile ? '100vh' : panelHeight;
-    container.style.bottom = isMobile ? '0' : bottom;
-    container.style[posXKey] = isMobile ? '0' : posXVal;
-    if (panelIframe) {
-      panelIframe.style.width  = '100%';
-      panelIframe.style.height = '100%';
+
+    if (isMobile) {
+      // TRUE FULLSCREEN on phones
+      container.style.top = '0';
+      container.style.left = '0';
+      container.style.right = '0';
+      container.style.bottom = '0';
+      container.style.width = '100%';
+      container.style.height = '100dvh'; // safer than 100vh on mobile
+      container.style.margin = '0';
+      container.style.padding = '0';
+
+      if (panelIframe) {
+        panelIframe.style.width = '100%';
+        panelIframe.style.height = '100%';
+        // kill card look in fullscreen
+        panelIframe.style.borderRadius = '0';
+        panelIframe.style.filter = 'none';
+        panelIframe.style.boxShadow = 'none';
+      }
+    } else {
+      // DESKTOP bubble size
+      container.style.top = 'auto';
+      container.style.left = 'auto';
+      container.style.right = posXVal;
+      container.style.bottom = bottom;
+      container.style.width = panelWidth;
+      container.style.height = panelHeight;
+
+      if (panelIframe) {
+        panelIframe.style.borderRadius = '16px';
+        panelIframe.style.filter = 'drop-shadow(0 10px 30px rgba(0,0,0,.15))';
+      }
     }
   }
 
@@ -305,6 +340,15 @@
 
     if (!iframe.isConnected) host.appendChild(iframe);
     applyResponsive();
+
+    // ★ Lock background scroll on mobile
+    try {
+      if (Math.min(window.innerWidth, window.innerHeight) < 500) {
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+      }
+    } catch {}
+
     isOpen = true;
   }
 
@@ -334,6 +378,12 @@
 
       if (mo) { try { mo.disconnect(); } catch { /* no-op */ } mo = null; }
     } finally {
+      // ★ Restore background scroll
+      try {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      } catch {}
+
       ensureBubble();           // bring bubble back AND rebind handlers
       window.setTimeout(scrubStrays, 0);
       window.setTimeout(scrubStrays, 120);
