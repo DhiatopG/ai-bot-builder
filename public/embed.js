@@ -5,6 +5,7 @@
   if (window.__in60Mounted) return;
   window.__in60Mounted = true;
 
+  // ---------- script + config ----------
   var scriptEl = document.currentScript;
   if (!scriptEl) return;
 
@@ -13,7 +14,7 @@
     scriptEl.getAttribute('data-user');
   if (!botId) return;
 
-  var srcUrl; try { srcUrl = new window.URL(scriptEl.src, window.location.href); } catch { /* no-op */ }
+  var srcUrl; try { srcUrl = new window.URL(scriptEl.src, window.location.href); } catch {}
   var origin = (srcUrl && srcUrl.origin) || window.location.origin;
 
   var zIndexStr = scriptEl.getAttribute('data-z') || '2147483647';
@@ -34,6 +35,7 @@
   var posXKey = isLeft ? 'left' : 'right';
   var posXVal = isLeft ? (scriptEl.getAttribute('data-left') || '20px') : right;
 
+  // ---------- state ----------
   var container   = null;
   var panelIframe = null;
   var bubble      = null;
@@ -42,6 +44,7 @@
   var isOpen      = false;
   var killTimer   = null;
 
+  // ---------- styles ----------
   function injectStyle() {
     if (styleTag) return;
     styleTag = document.createElement('style');
@@ -106,7 +109,7 @@
       html, body, #__next { background: transparent !important; }
       html, body { margin: 0 !important; padding: 0 !important; }
 
-      /* --- MOBILE OVERRIDES (win vs. !important on base rules) --- */
+      /* --- MOBILE OVERRIDES --- */
       @media (max-width: 500px) {
         #in60-container-${botId} {
           top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
@@ -122,6 +125,7 @@
     document.head.appendChild(styleTag);
   }
 
+  // ---------- builders ----------
   function createContainer() {
     if (container) return container;
     container = document.createElement('div');
@@ -195,7 +199,7 @@
     bubble.onpointerdown = null;
 
     const open = function(e){
-      try { e && (e.preventDefault(), e.stopPropagation(), e.stopImmediatePropagation && e.stopImmediatePropagation()); } catch { /* no-op */ }
+      try { e && (e.preventDefault(), e.stopPropagation(), e.stopImmediatePropagation && e.stopImmediatePropagation()); } catch {}
       openPanel();
     };
     bubble.addEventListener('click', open, { capture: true });
@@ -207,7 +211,7 @@
     bubble.style.touchAction = 'manipulation';
   }
 
-  // IMPORTANT: our base CSS uses !important; use setProperty(..., 'important')
+  // ---------- helpers ----------
   function setImp(el, prop, val) {
     try { el.style.setProperty(prop, val, 'important'); } catch {}
   }
@@ -252,18 +256,31 @@
     var all = document.querySelectorAll('iframe[id^="in60-iframe-"]');
     all.forEach(function (el) {
       if (!isOpen) {
-        try { el.style.pointerEvents = 'none'; el.style.display = 'none'; el.remove(); } catch { /* no-op */ }
+        try { el.style.pointerEvents = 'none'; el.style.display = 'none'; el.remove(); } catch {}
       }
     });
   }
 
+  // ---------- UPDATED: bubble hidden while panel is open ----------
   function ensureBubble() {
     injectStyle();
+
     if (!bubble || !bubble.isConnected) createBubble();
 
     document.querySelectorAll('div[id^="in60-bubble-"]').forEach(function (el) { if (el !== bubble) { try { el.remove(); } catch {} }});
     document.querySelectorAll('div[id^="in60-container-"]').forEach(function (el) { if (el.id !== 'in60-container-' + botId) { try { el.remove(); } catch {} }});
     document.querySelectorAll('iframe[id^="in60-iframe-"]').forEach(function (el) { if (el.id !== 'in60-iframe-' + botId) { try { el.remove(); } catch {} }});
+
+    if (isOpen) {
+      if (bubble) {
+        bubble.style.opacity = '0';
+        bubble.style.display = 'none';
+        bubble.style.pointerEvents = 'none';
+      }
+      var label = document.getElementById('in60-bubble-text-' + botId);
+      if (label) label.style.display = 'none';
+      return; // <-- keep hidden while open
+    }
 
     Object.assign(bubble.style, {
       width: '56px',
@@ -276,9 +293,10 @@
     });
 
     bindBubbleHandlers();
+
     if (bubble !== document.body.lastElementChild) document.body.appendChild(bubble);
 
-    if (!isOpen && !killTimer) {
+    if (!killTimer) {
       killOverlays();
       killTimer = window.setInterval(killOverlays, 200);
       window.setTimeout(function(){ window.clearInterval(killTimer); killTimer = null; }, 5000);
@@ -299,6 +317,7 @@
     if (stray) { try { stray.remove(); } catch {} }
   }
 
+  // ---------- lifecycle ----------
   function openPanel(e) {
     if (e) { try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch {} }
 
@@ -376,6 +395,7 @@
     delete window.In60;
   }
 
+  // ---------- observers & events ----------
   function startObserver() {
     if (mo || !('MutationObserver' in window)) return;
     mo = new window.MutationObserver(function () {
@@ -416,6 +436,7 @@
   function onPageHide(){ destroy(); }
   function onBeforeUnload(){ destroy(); }
 
+  // ---------- public API ----------
   window.In60 = {
     open: openPanel,
     close: closePanel,
@@ -424,11 +445,13 @@
     isOpen: function(){ return !!isOpen; }
   };
 
+  // ---------- mount ----------
   injectStyle();
   ensureBubble();
   if (openOnLoad) openPanel();
   startObserver();
 
+  // ---------- listeners ----------
   ['click','pointerdown','pointerup','mousedown','mouseup','touchstart','touchend']
     .forEach(function(evt){ document.addEventListener(evt, onDocActivate, true); });
 
