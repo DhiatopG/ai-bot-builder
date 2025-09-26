@@ -4,121 +4,146 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>My AI Assistant</title>
+
+  <!-- Tailwind + Alpine (same as before) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/alpinejs" defer></script>
-</head>
-<body class="bg-gray-200 flex justify-center items-center h-screen">
 
-<div class="w-[380px] h-[600px] bg-white rounded-xl shadow-lg flex flex-col" x-data="chatApp()">
-  <div class="bg-gray-900 text-white px-4 py-3 rounded-t-xl flex items-center justify-between">
-    <span class="font-semibold">My AI Bot</span>
-    <div class="flex gap-2 items-center">
-      <button title="Voice" class="text-white text-xl">🔊</button>
-      <button title="Restart" class="text-white text-xl" @click="restart()">🔁</button>
+  <!-- Force transparent page when embedded -->
+  <style>
+    html, body { background: transparent !important; }
+    /* safety: if any wrapper accidentally has bg-white, make it transparent at page level */
+    .bg-white-page { background: transparent !important; }
+  </style>
+
+  <script>
+    // Respect ?bg=transparent (keeps old loaders compatible)
+    (function () {
+      var wantTransparent = new URLSearchParams(location.search).get('bg') === 'transparent';
+      if (wantTransparent) {
+        document.documentElement.style.background = 'transparent';
+        document.addEventListener('DOMContentLoaded', function () {
+          document.body.classList.remove('bg-gray-200','bg-white');
+          document.body.classList.add('bg-transparent');
+        });
+      }
+    })();
+  </script>
+</head>
+
+<!-- PAGE BACKGROUND MUST BE TRANSPARENT -->
+<body class="bg-transparent flex justify-center items-center h-screen">
+
+  <!-- The chat CARD stays white (that’s fine) -->
+  <div class="w-[380px] h-[600px] bg-white rounded-xl shadow-lg flex flex-col" x-data="chatApp()">
+    <div class="bg-gray-900 text-white px-4 py-3 rounded-t-xl flex items-center justify-between">
+      <span class="font-semibold">My AI Bot</span>
+      <div class="flex gap-3 items-center">
+        <!-- Close sends a message to parent so the parent can hide/remove the iframe -->
+        <button title="Close"
+                class="text-white/80 hover:text-white text-xl leading-none"
+                onclick="window.parent && window.parent.postMessage({type:'in60:close'}, '*')">✖</button>
+        <button title="Voice" class="text-white text-xl">🔊</button>
+        <button title="Restart" class="text-white text-xl" @click="restart()">🔁</button>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chat-scroll">
+      <template x-for="msg in messages" :key="msg.id">
+        <div :class="msg.from === 'bot' ? 'text-left' : 'text-right'">
+          <div :class="msg.from === 'bot' ? 'bg-gray-100 text-black' : 'bg-black text-white'"
+               class="inline-block px-4 py-2 rounded-lg max-w-[80%]">
+            <span x-text="msg.text"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <div class="border-t px-3 py-2 flex gap-2 items-center">
+      <input type="text" x-model="input"
+             class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none"
+             placeholder="Message..." @keydown.enter="sendMessage()">
+      <button @click="sendMessage()" class="text-2xl">📨</button>
     </div>
   </div>
 
-  <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chat-scroll">
-    <template x-for="msg in messages" :key="msg.id">
-      <div :class="msg.from === 'bot' ? 'text-left' : 'text-right'">
-        <div :class="msg.from === 'bot' ? 'bg-gray-100 text-black' : 'bg-black text-white'"
-             class="inline-block px-4 py-2 rounded-lg max-w-[80%]">
-          <span x-text="msg.text"></span>
-        </div>
-      </div>
-    </template>
-  </div>
+  <script>
+    if (!localStorage.getItem('user_id')) {
+      localStorage.setItem('user_id', '12345');
+    }
 
-  <div class="border-t px-3 py-2 flex gap-2 items-center">
-    <input type="text" x-model="input"
-           class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none"
-           placeholder="Message..." @keydown.enter="sendMessage()">
-    <button @click="sendMessage()" class="text-2xl">📨</button>
-  </div>
-</div>
-
-<script>
-  if (!localStorage.getItem('user_id')) {
-    localStorage.setItem('user_id', '12345');
-  }
-
-  function chatApp() {
-    return {
-      input: '',
-      messages: [
-        { id: 1, from: 'bot', text: "Hello! I'm your AI assistant ⚡" },
-        { id: 2, from: 'bot', text: "Nice to meet you! What's your name?" }
-      ],
-      step: 'askname',
-      username: '',
-      useremail: '',
-
-      async sendMessage() {
-        const text = this.input.trim()
-        if (!text) return
-        this.messages.push({ id: Date.now(), from: 'user', text })
-        this.input = ''
-
-        if (this.step === 'askname') {
-          this.username = text
-          this.messages.push({ id: Date.now() + 1, from: 'bot', text: `Thanks, ${this.username}. What's your email?` })
-          this.step = 'askemail'
-        } else if (this.step === 'askemail') {
-          this.useremail = text
-          this.messages.push({ id: Date.now() + 1, from: 'bot', text: `Thanks! You can ask me anything.` })
-          await saveLead(this.username, this.useremail)
-          this.step = 'chat'
-        } else {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              question: text,
-              knowledge: "This is a general bot. The business helps clients reach their goals through expert advice."
-            })
-          })
-
-          const data = await res.json()
-          this.messages.push({ id: Date.now() + 1, from: 'bot', text: data.answer || "❌ Error from AI" })
-        }
-      },
-
-      restart() {
-        this.input = ''
-        this.step = 'askname'
-        this.username = ''
-        this.useremail = ''
-        this.messages = [
+    function chatApp() {
+      return {
+        input: '',
+        messages: [
           { id: 1, from: 'bot', text: "Hello! I'm your AI assistant ⚡" },
           { id: 2, from: 'bot', text: "Nice to meet you! What's your name?" }
-        ]
+        ],
+        step: 'askname',
+        username: '',
+        useremail: '',
+
+        async sendMessage() {
+          const text = this.input.trim();
+          if (!text) return;
+          this.messages.push({ id: Date.now(), from: 'user', text });
+          this.input = '';
+
+          if (this.step === 'askname') {
+            this.username = text;
+            this.messages.push({ id: Date.now() + 1, from: 'bot', text: `Thanks, ${this.username}. What's your email?` });
+            this.step = 'askemail';
+          } else if (this.step === 'askemail') {
+            this.useremail = text;
+            this.messages.push({ id: Date.now() + 1, from: 'bot', text: `Thanks! You can ask me anything.` });
+            await saveLead(this.username, this.useremail);
+            this.step = 'chat';
+          } else {
+            const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                question: text,
+                knowledge: "This is a general bot. The business helps clients reach their goals through expert advice."
+              })
+            });
+            const data = await res.json();
+            this.messages.push({ id: Date.now() + 1, from: 'bot', text: data.answer || "❌ Error from AI" });
+          }
+        },
+
+        restart() {
+          this.input = '';
+          this.step = 'askname';
+          this.username = '';
+          this.useremail = '';
+          this.messages = [
+            { id: 1, from: 'bot', text: "Hello! I'm your AI assistant ⚡" },
+            { id: 2, from: 'bot', text: "Nice to meet you! What's your name?" }
+          ];
+        }
       }
     }
-  }
 
-  async function saveLead(name, email) {
-    try {
-      const response = await fetch('/api/lead', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: localStorage.getItem('user_id'),
-          name,
-          email
-        })
-      })
-
-      const result = await response.json()
-      if (!response.ok) {
-        console.error(result.error)
-      } else {
-        console.log('✅ Lead saved!')
+    async function saveLead(name, email) {
+      try {
+        const response = await fetch('/api/lead', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: localStorage.getItem('user_id'),
+            name,
+            email
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) console.error(result.error);
+        else console.log('✅ Lead saved!');
+      } catch (e) {
+        console.error('❌ Failed to save lead:', e);
       }
-    } catch (e) {
-      console.error('❌ Failed to save lead:', e)
     }
-  }
-</script>
+  </script>
 
 </body>
 </html>

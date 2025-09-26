@@ -19,7 +19,9 @@ const blocks = {
 
   collectLeadBasic: () =>
     <GuardedAction[]>[
+      // Matches your capture regex: includes “put this under your name”
       { type: 'ask', key: 'name',  message: "What name should I put on this?" },
+      // Matches “best email” in your capture regex
       { type: 'ask', key: 'email', message: "What’s the best email for a quick confirmation?" },
     ],
 
@@ -50,7 +52,9 @@ const blocks = {
 
   openCalendar: () =>
     <GuardedAction[]>[
-      { type: 'open_calendar', message: "Great—here’s the calendar." }
+      // ✅ NEW: only open the calendar once we have at least a NAME on file.
+      // (Email/phone can still be collected immediately after, per your index.ts logic.)
+      { type: 'open_calendar', message: "Great—here’s the calendar.", when: (_biz, e) => !!(e && e.name) }
     ],
 
   pricingFollowup: () =>

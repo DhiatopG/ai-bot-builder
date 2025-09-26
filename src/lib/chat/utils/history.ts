@@ -1,3 +1,4 @@
+// src/lib/chat/utils/history.ts
 const DEBUG_CHAT_LEADS = true;
 
 export function logHistory(label: string, items: { role: string; content: string }[]) {
@@ -18,9 +19,12 @@ export function isGreeting(s: string) {
   return false;
 }
 
+/** Expanded capture-ask detector: includes “please provide your name”, “what name should I use/put this under”, etc. */
 export function isCapturePromptText(s: string) {
   const t = String(s || '').toLowerCase();
-  return /can i take your name|what'?s your name|your email|best email|keep you posted|share email|all set, .*saved your email/.test(t);
+  return /(?:can i take your name|what'?s your name|what name should i (?:use|put (?:this )?under)|(?:could you )?please provide (?:your )?name|your email|best email|email to send|keep you posted|share email|all set, .*saved your email)/i.test(
+    t
+  );
 }
 
 export function hasDeliveredValueOnce(history: { role: string; content: string }[]) {
@@ -52,10 +56,16 @@ export function lastCaptureIndex(history: { role: string; content: string }[]) {
   return -1;
 }
 
+/** Expanded name-ask detector to match the same variants used elsewhere. */
 export function lastNameAskIndex(history: { role: string; content: string }[]) {
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
-    if (m.role === 'assistant' && /your name|put this under your name|can i take your name|what'?s your name/i.test(String(m.content || ''))) {
+    if (
+      m.role === 'assistant' &&
+      /your name|put this under your name|can i take your name|what'?s your name|what name should i (?:use|put (?:this )?under)|(?:could you )?please provide (?:your )?name/i.test(
+        String(m.content || '')
+      )
+    ) {
       return i;
     }
   }
@@ -85,10 +95,27 @@ export function canConsiderNameFromUser(history: { role: string; content: string
   return true;
 }
 
+/**
+ * Smarter capture-input detector:
+ * - single-word or two-word replies are usually capture answers (names, short acks)
+ * - also treat emails/phones as capture inputs
+ */
 export function isLikelyCaptureInput(s: string) {
   const t = String(s || '').trim();
   if (!t) return true;
-  if (/\b(yes|yeah|yep|ok|okay|no|nah|nope|please|thanks|thank you)\b/i.test(t)) return true;
+
+  // common short acks
+  if (/\b(yes|yeah|yep|ok|okay|no|nah|nope|please|thanks|thank you|skip)\b/i.test(t)) return true;
+
+  // email
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return true;
+
+  // phone-ish
+  if (/\+?\d[\d\s().-]{5,}/.test(t)) return true;
+
+  // very short inputs (often names like "hiba", "ahmed")
+  if (t.split(/\s+/).length <= 2) return true;
+
   return false;
 }
 

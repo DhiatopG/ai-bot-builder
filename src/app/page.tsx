@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, Shield, Users, Star, Zap } from 'lucide-react'
+import Script from 'next/script' // <-- added
 
 export default function HomePage() {
   const router = useRouter()
@@ -232,6 +233,15 @@ export default function HomePage() {
         </div>
         <div className="text-center text-blue-300 text-sm pt-8 border-t border-blue-800 mt-12">© 2025 In60second. All rights reserved.</div>
       </footer>
+
+      {/* In60second embed on Home only */}
+      <Script
+        id="in60-embed"
+        src="/embed.js"
+        strategy="afterInteractive"
+        data-bot-id="40e696d6-d1ab-48dc-b5e9-d356d96bbe7a"
+        data-position="bottom-right"
+      />
     </div>
   )
 }

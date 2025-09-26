@@ -35,7 +35,6 @@ export function decideNextAction(
   const isOneWord = txt.split(/\s+/).length === 1;
 
   // Detect contact typed *on this turn*
-  // (Permissive but robust regexes so short formats still pass)
   const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(txt);
   const looksLikePhone = /^(?:\+?\d[\d\s().-]{6,}\d)$/.test(txt);
   const justProvidedLead = looksLikeEmail || looksLikePhone;
@@ -51,7 +50,7 @@ export function decideNextAction(
     (s) => (!s.when || s.when(biz, e)) && s.type === 'ask' && !stepIsSatisfied(s.key as any, e)
   );
 
-  // --- If the user just provided contact info, stay on the SAME topic and continue smoothly.
+  // If the user just provided contact info, keep the same topic and continue smoothly.
   if (justProvidedLead) {
     const topic = inferTopic(intent, e);
 
@@ -63,7 +62,6 @@ export function decideNextAction(
       return { type: 'freeform', message: `All set—I’m here if you need anything else.` };
     }
 
-    // If you have an online booking link and we're in pricing/booking, move them forward.
     if ((intent === 'pricing' || intent === 'booking') && (biz as any)?.booking?.url) {
       return {
         type: 'show_link',
@@ -72,7 +70,6 @@ export function decideNextAction(
       } as any;
     }
 
-    // Keep the conversation anchored to the existing intent/topic.
     if (intent === 'pricing') {
       return {
         type: 'freeform',
@@ -104,7 +101,6 @@ export function decideNextAction(
       };
     }
 
-    // Generic continuation if intent is something else
     return {
       type: 'freeform',
       message: `Thanks! I’ve saved your details. What else would you like to know about ${topic}?`
@@ -122,7 +118,6 @@ export function decideNextAction(
 
     if (step.type === 'ask') {
       if (stepIsSatisfied(step.key, e)) continue;
-      // Return the ask step as-is; caller can persist "pending_step=need_contact" when key is contact/email/phone.
       return step;
     }
 
@@ -156,6 +151,6 @@ export function decideNextAction(
     return step;
   }
 
-  // --- Fallback
+  // Fallback
   return { type: 'freeform', message: '' };
 }
