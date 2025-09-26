@@ -2,11 +2,9 @@
 /* eslint no-empty: ["error", { "allowEmptyCatch": true }] */
 
 (function () {
-  // ---------- single mount guard ----------
   if (window.__in60Mounted) return;
   window.__in60Mounted = true;
 
-  // ---------- script + config ----------
   var scriptEl = document.currentScript;
   if (!scriptEl) return;
 
@@ -18,11 +16,10 @@
   var srcUrl; try { srcUrl = new window.URL(scriptEl.src, window.location.href); } catch { /* no-op */ }
   var origin = (srcUrl && srcUrl.origin) || window.location.origin;
 
-  // Stacking: keep bubble above panel
   var zIndexStr = scriptEl.getAttribute('data-z') || '2147483647';
   var Z = parseInt(zIndexStr, 10) || 2147483646;
-  var Z_BUBBLE = Z;                  // bubble on top
-  var Z_PANEL  = Math.max(0, Z - 1); // panel just below bubble
+  var Z_BUBBLE = Z;
+  var Z_PANEL  = Math.max(0, Z - 1);
 
   var panelWidth  = scriptEl.getAttribute('data-width')  || '380px';
   var panelHeight = scriptEl.getAttribute('data-height') || '600px';
@@ -37,22 +34,19 @@
   var posXKey = isLeft ? 'left' : 'right';
   var posXVal = isLeft ? (scriptEl.getAttribute('data-left') || '20px') : right;
 
-  // ---------- state ----------
   var container   = null;
   var panelIframe = null;
   var bubble      = null;
   var styleTag    = null;
   var mo          = null;
   var isOpen      = false;
-  var killTimer   = null; // watchdog interval id
+  var killTimer   = null;
 
-  // ---------- styles ----------
   function injectStyle() {
     if (styleTag) return;
     styleTag = document.createElement('style');
     styleTag.id = 'in60-style-' + botId;
     styleTag.textContent = `
-      /* Invisible container (no bg/radius/shadow); below bubble */
       #in60-container-${botId} { all: initial; }
       #in60-container-${botId} {
         position: fixed !important;
@@ -67,7 +61,6 @@
         pointer-events: auto !important;
       }
 
-      /* Iframe carries visuals; positioned so stacking works */
       #in60-iframe-${botId} {
         position: relative !important;
         z-index: 0 !important;
@@ -79,7 +72,6 @@
         pointer-events: auto !important;
       }
 
-      /* Bubble (on top of panel/iframe) */
       #in60-bubble-${botId} {
         position: fixed !important;
         bottom: ${bottom} !important;
@@ -94,12 +86,11 @@
         transition: transform .12s, opacity .15s !important;
         pointer-events: auto !important; touch-action: manipulation !important;
         will-change: transform, opacity !important;
-        isolation: isolate !important; /* own stacking context */
+        isolation: isolate !important;
       }
       #in60-bubble-${botId}:hover { transform: translateY(-1px) scale(1.02); }
       #in60-bubble-${botId} svg { width: 24px; height: 24px; display:block; }
 
-      /* Optional label */
       #in60-bubble-text-${botId} {
         position: fixed !important;
         bottom: calc(${bottom} + 8px) !important;
@@ -112,12 +103,16 @@
         pointer-events: none !important;
       }
 
-      /* Inside iframe document must be transparent */
       html, body, #__next { background: transparent !important; }
       html, body { margin: 0 !important; padding: 0 !important; }
 
-      /* ★ Mobile override: remove card rounding/shadow when fullscreen */
+      /* --- MOBILE OVERRIDES (win vs. !important on base rules) --- */
       @media (max-width: 500px) {
+        #in60-container-${botId} {
+          top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+          width: 100% !important; height: 100dvh !important;
+          margin: 0 !important; padding: 0 !important;
+        }
         #in60-iframe-${botId} {
           border-radius: 0 !important;
           filter: none !important;
@@ -127,7 +122,6 @@
     document.head.appendChild(styleTag);
   }
 
-  // ---------- builders ----------
   function createContainer() {
     if (container) return container;
     container = document.createElement('div');
@@ -197,11 +191,9 @@
 
   function bindBubbleHandlers() {
     if (!bubble) return;
-    // Remove any previous listeners to avoid duplicates (safe idempotent)
     bubble.onclick = null;
     bubble.onpointerdown = null;
 
-    // capture:true so global interceptors can’t swallow it
     const open = function(e){
       try { e && (e.preventDefault(), e.stopPropagation(), e.stopImmediatePropagation && e.stopImmediatePropagation()); } catch { /* no-op */ }
       openPanel();
@@ -210,55 +202,53 @@
     bubble.addEventListener('pointerdown', open, { capture: true });
     bubble.addEventListener('touchstart', function(e){ e.preventDefault(); openPanel(e); }, { capture: true, passive: false });
 
-    // Make absolutely sure it can receive the click
     bubble.style.zIndex = String(Z_BUBBLE);
     bubble.style.pointerEvents = 'auto';
     bubble.style.touchAction = 'manipulation';
   }
 
-  // ---------- helpers ----------
-  // ★ Reworked for TRUE mobile fullscreen and desktop card
+  // IMPORTANT: our base CSS uses !important; use setProperty(..., 'important')
+  function setImp(el, prop, val) {
+    try { el.style.setProperty(prop, val, 'important'); } catch {}
+  }
+
   function applyResponsive() {
     if (!container) return;
     var isMobile = Math.min(window.innerWidth, window.innerHeight) < 500;
 
     if (isMobile) {
-      // TRUE FULLSCREEN on phones
-      container.style.top = '0';
-      container.style.left = '0';
-      container.style.right = '0';
-      container.style.bottom = '0';
-      container.style.width = '100%';
-      container.style.height = '100dvh'; // safer than 100vh on mobile
-      container.style.margin = '0';
-      container.style.padding = '0';
+      setImp(container, 'top', '0');
+      setImp(container, 'left', '0');
+      setImp(container, 'right', '0');
+      setImp(container, 'bottom', '0');
+      setImp(container, 'width', '100%');
+      setImp(container, 'height', '100dvh');
+      setImp(container, 'margin', '0');
+      setImp(container, 'padding', '0');
 
       if (panelIframe) {
-        panelIframe.style.width = '100%';
-        panelIframe.style.height = '100%';
-        // kill card look in fullscreen
-        panelIframe.style.borderRadius = '0';
-        panelIframe.style.filter = 'none';
-        panelIframe.style.boxShadow = 'none';
+        setImp(panelIframe, 'width', '100%');
+        setImp(panelIframe, 'height', '100%');
+        setImp(panelIframe, 'border-radius', '0');
+        setImp(panelIframe, 'filter', 'none');
+        setImp(panelIframe, 'box-shadow', 'none');
       }
     } else {
-      // DESKTOP bubble size
-      container.style.top = 'auto';
-      container.style.left = 'auto';
-      container.style.right = posXVal;
-      container.style.bottom = bottom;
-      container.style.width = panelWidth;
-      container.style.height = panelHeight;
+      setImp(container, 'top', 'auto');
+      setImp(container, 'left', 'auto');
+      setImp(container, 'right', posXVal);
+      setImp(container, 'bottom', bottom);
+      setImp(container, 'width', panelWidth);
+      setImp(container, 'height', panelHeight);
 
       if (panelIframe) {
-        panelIframe.style.borderRadius = '16px';
-        panelIframe.style.filter = 'drop-shadow(0 10px 30px rgba(0,0,0,.15))';
+        setImp(panelIframe, 'border-radius', '16px');
+        setImp(panelIframe, 'filter', 'drop-shadow(0 10px 30px rgba(0,0,0,.15))');
       }
     }
   }
 
   function killOverlays() {
-    // remove ANY in60 iframe while closed (safety)
     var all = document.querySelectorAll('iframe[id^="in60-iframe-"]');
     all.forEach(function (el) {
       if (!isOpen) {
@@ -268,18 +258,13 @@
   }
 
   function ensureBubble() {
-    // Always ensure CSS is present (after close/HMR it may be gone)
     injectStyle();
-
-    // Create bubble if missing
     if (!bubble || !bubble.isConnected) createBubble();
 
-    // Hard de-dup: keep only this instance’s nodes
-    document.querySelectorAll('div[id^="in60-bubble-"]').forEach(function (el) { if (el !== bubble) { try { el.remove(); } catch { /* no-op */ } }});
-    document.querySelectorAll('div[id^="in60-container-"]').forEach(function (el) { if (el.id !== 'in60-container-' + botId) { try { el.remove(); } catch { /* no-op */ } }});
-    document.querySelectorAll('iframe[id^="in60-iframe-"]').forEach(function (el) { if (el.id !== 'in60-iframe-' + botId) { try { el.remove(); } catch { /* no-op */ } }});
+    document.querySelectorAll('div[id^="in60-bubble-"]').forEach(function (el) { if (el !== bubble) { try { el.remove(); } catch {} }});
+    document.querySelectorAll('div[id^="in60-container-"]').forEach(function (el) { if (el.id !== 'in60-container-' + botId) { try { el.remove(); } catch {} }});
+    document.querySelectorAll('iframe[id^="in60-iframe-"]').forEach(function (el) { if (el.id !== 'in60-iframe-' + botId) { try { el.remove(); } catch {} }});
 
-    // Make sure bubble is visible & sized even if styles blinked
     Object.assign(bubble.style, {
       width: '56px',
       height: '56px',
@@ -290,13 +275,9 @@
       touchAction: 'manipulation',
     });
 
-    // Rebind handlers every time (HMR/DOM swap safe)
     bindBubbleHandlers();
-
-    // Keep last in body so it wins static stacking order
     if (bubble !== document.body.lastElementChild) document.body.appendChild(bubble);
 
-    // While closed, keep area clean of any stray iframes
     if (!isOpen && !killTimer) {
       killOverlays();
       killTimer = window.setInterval(killOverlays, 200);
@@ -315,14 +296,12 @@
 
   function scrubStrays() {
     var stray = document.getElementById('in60-iframe-' + botId);
-    if (stray) { try { stray.remove(); } catch { /* no-op */ } }
+    if (stray) { try { stray.remove(); } catch {} }
   }
 
-  // ---------- lifecycle ----------
   function openPanel(e) {
-    if (e) { try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch { /* no-op */ } }
+    if (e) { try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation && e.stopImmediatePropagation(); } catch {} }
 
-    // Stuck-open recovery: if isOpen but iframe is gone, treat as closed
     if (isOpen) {
       var live = document.getElementById('in60-iframe-' + botId);
       if (!live) { isOpen = false; } else { return; }
@@ -332,7 +311,7 @@
     hideBubble();
 
     var host = createContainer();
-    host.style.zIndex = String(Z_PANEL); // keep under bubble
+    host.style.zIndex = String(Z_PANEL);
 
     var iframe = createPanelIframe();
     iframe.style.pointerEvents = 'auto';
@@ -341,7 +320,6 @@
     if (!iframe.isConnected) host.appendChild(iframe);
     applyResponsive();
 
-    // ★ Lock background scroll on mobile
     try {
       if (Math.min(window.innerWidth, window.innerHeight) < 500) {
         document.body.style.overflow = 'hidden';
@@ -358,8 +336,8 @@
 
     try {
       if (panelIframe) {
-        try { panelIframe.style.pointerEvents = 'none'; panelIframe.style.display = 'none'; panelIframe.style.opacity = '0'; } catch { /* no-op */ }
-        try { panelIframe.remove(); } catch { /* no-op */ }
+        try { panelIframe.style.pointerEvents = 'none'; panelIframe.style.display = 'none'; panelIframe.style.opacity = '0'; } catch {}
+        try { panelIframe.remove(); } catch {}
         panelIframe = null;
       }
 
@@ -371,20 +349,19 @@
           container.style.padding = '0';
           container.style.border = '0';
           container.style.background = 'transparent';
-        } catch { /* no-op */ }
-        try { container.remove(); } catch { /* no-op */ }
+        } catch {}
+        try { container.remove(); } catch {}
         container = null;
       }
 
-      if (mo) { try { mo.disconnect(); } catch { /* no-op */ } mo = null; }
+      if (mo) { try { mo.disconnect(); } catch {} mo = null; }
     } finally {
-      // ★ Restore background scroll
       try {
         document.body.style.overflow = '';
         document.documentElement.style.overflow = '';
       } catch {}
 
-      ensureBubble();           // bring bubble back AND rebind handlers
+      ensureBubble();
       window.setTimeout(scrubStrays, 0);
       window.setTimeout(scrubStrays, 120);
       window.setTimeout(scrubStrays, 400);
@@ -393,41 +370,38 @@
 
   function destroy() {
     closePanel();
-    try { if (bubble) bubble.remove(); } catch { /* no-op */ }
+    try { if (bubble) bubble.remove(); } catch {}
     bubble = null;
     window.__in60Mounted = false;
     delete window.In60;
   }
 
-  // ---------- observers & events ----------
   function startObserver() {
     if (mo || !('MutationObserver' in window)) return;
     mo = new window.MutationObserver(function () {
-      if (container && !document.body.contains(container)) { try { container.remove(); } catch { /* no-op */ } container = null; }
-      if (panelIframe && container && !container.contains(panelIframe)) { try { panelIframe.remove(); } catch { /* no-op */ } panelIframe = null; }
+      if (container && !document.body.contains(container)) { try { container.remove(); } catch {} container = null; }
+      if (panelIframe && container && !container.contains(panelIframe)) { try { panelIframe.remove(); } catch {} panelIframe = null; }
       if (!isOpen && (!bubble || !document.body.contains(bubble))) { ensureBubble(); }
       if (!isOpen) killOverlays();
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // Delegated activation (capture) + hard stop (kept for safety)
   function onDocActivate(e) {
     var t = e.target;
     if (!t || !t.closest) return;
     var b = t.closest('#in60-bubble-' + botId);
     if (!b) return;
-    try { e.preventDefault(); e.stopPropagation(); if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); } catch { /* no-op */ }
+    try { e.preventDefault(); e.stopPropagation(); if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); } catch {}
     openPanel();
   }
 
-  // Geometric hitbox fallback
   function onHitbox(e) {
     if (!bubble || window.getComputedStyle(bubble).display === 'none' || window.getComputedStyle(bubble).opacity === '0') return;
     var r = bubble.getBoundingClientRect();
     var x = e.clientX, y = e.clientY;
     if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-      try { e.preventDefault(); e.stopPropagation(); if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); } catch { /* no-op */ }
+      try { e.preventDefault(); e.stopPropagation(); if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); } catch {}
       openPanel();
     }
   }
@@ -442,7 +416,6 @@
   function onPageHide(){ destroy(); }
   function onBeforeUnload(){ destroy(); }
 
-  // ---------- public API ----------
   window.In60 = {
     open: openPanel,
     close: closePanel,
@@ -451,15 +424,13 @@
     isOpen: function(){ return !!isOpen; }
   };
 
-  // ---------- mount ----------
   injectStyle();
-  ensureBubble();              // bubble visible by default (closed state)
-  if (openOnLoad) openPanel(); // optional open on load
+  ensureBubble();
+  if (openOnLoad) openPanel();
   startObserver();
 
-  // ---------- listeners ----------
   ['click','pointerdown','pointerup','mousedown','mouseup','touchstart','touchend']
-    .forEach(function(evt){ document.addEventListener(evt, onDocActivate, true); }); // capture
+    .forEach(function(evt){ document.addEventListener(evt, onDocActivate, true); });
 
   ['click','pointerdown','pointerup','mousedown','mouseup','touchstart','touchend']
     .forEach(function(evt){ document.addEventListener(evt, onHitbox, true); });
@@ -469,13 +440,11 @@
   window.addEventListener('scroll', ensureBubble, { passive: true });
   window.addEventListener('keydown', onKeydown);
 
-  // In dev, hot-reload can trigger pagehide/beforeunload; keep bubble alive on localhost
   var isLocal = /(^localhost$)|(^127\.0\.0\.1$)/.test(window.location.hostname);
   if (!isLocal) {
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('beforeunload', onBeforeUnload);
   } else {
-    // lift above Next/Turbopack badge
     const lift = function(){ if (bubble) bubble.style.bottom = '80px'; };
     window.setTimeout(lift, 0);
     window.addEventListener('resize', lift, { passive: true });

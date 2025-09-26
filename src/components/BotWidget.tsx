@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import useChatLogic from './ChatLogic'
 
 export default function BotWidget({ botId }: { botId: string }) {
@@ -21,35 +21,35 @@ export default function BotWidget({ botId }: { botId: string }) {
     startNewConversation,
   } = useChatLogic(botId)
 
+  // Debug flag + logger
   const DEBUG =
     typeof window !== 'undefined' &&
     (new URLSearchParams(window.location.search).has('debug') ||
       process.env.NEXT_PUBLIC_DEBUG_CHAT === '1')
-  const dlog = (...args: any[]) => { if (DEBUG) console.log('[BotWidget]', ...args) }
+  const debugRef = useRef<boolean>(DEBUG)
+  useEffect(() => { debugRef.current = DEBUG }, [DEBUG])
+  const dlog = (...args: any[]) => { if (debugRef.current) console.log('[BotWidget]', ...args) }
 
   // running inside an iframe (embedded mode)?
   const IN_IFRAME =
     typeof window !== 'undefined' && window.parent && window.parent !== window
 
-  // ---------- ONLY CHANGE THAT MATTERS ----------
-  // Host embed.js listens for { type: 'in60:open' | 'in60:close' | 'in60:toggle' }.
-  // Keep legacy payload too for safety.
-  const notifyParent = (action: 'open' | 'close' | 'toggle') => {
+  // ---------- Parent notifier (stable; no DEBUG capture) ----------
+  // Host embed.js listens for: in60:open | in60:close | in60:toggle
+  const notifyParent = useCallback((action: 'open' | 'close' | 'toggle') => {
     try {
       if (typeof window === 'undefined' || !window.parent || window.parent === window) return
       const map = { open: 'in60:open', close: 'in60:close', toggle: 'in60:toggle' } as const
-      // expected by host
-      window.parent.postMessage({ type: map[action] }, '*')
-      // legacy schema (optional)
-      window.parent.postMessage({ source: 'in60', type: action }, '*')
+      window.parent.postMessage({ type: map[action] }, '*')             // current schema
+      window.parent.postMessage({ source: 'in60', type: action }, '*')  // legacy schema
     } catch (e) {
-      if (DEBUG) console.warn('[BotWidget] notifyParent failed:', e) // <-- not empty now
+      if (debugRef.current) console.warn('[BotWidget] notifyParent failed:', e)
     }
-  }
+  }, []) // stable reference; no exhaustive-deps warning
 
   useEffect(() => {
     notifyParent(visible ? 'open' : 'close')
-  }, [visible])
+  }, [visible, notifyParent])
 
   const announcedIframesRef = useRef<Set<string>>(new Set())
   const closedIframesRef = useRef<Set<string>>(new Set())
@@ -73,10 +73,10 @@ export default function BotWidget({ botId }: { botId: string }) {
       }
 
       const after = u.toString()
-      if (DEBUG) dlog('toEmbedUrl:', { host: h, before, after, changed: before !== after })
+      if (debugRef.current) dlog('toEmbedUrl:', { host: h, before, after, changed: before !== after })
       return after
     } catch (e) {
-      if (DEBUG) dlog('toEmbedUrl: failed to parse', { raw, error: String(e) })
+      if (debugRef.current) dlog('toEmbedUrl: failed to parse', { raw, error: String(e) })
       return raw
     }
   }
@@ -85,7 +85,7 @@ export default function BotWidget({ botId }: { botId: string }) {
     setMessages(m => {
       const src = (m as any)[index]?.iframe || ''
       const alreadyNotified = announcedIframesRef.current.has(`fail:${src}`)
-      if (DEBUG) dlog('convertIframeToLink()', { index, src, alreadyNotified })
+      if (debugRef.current) dlog('convertIframeToLink()', { index, src, alreadyNotified })
 
       const updated = (m as any).map((msg: any, i: number) =>
         i === index && msg.iframe
@@ -125,18 +125,18 @@ export default function BotWidget({ botId }: { botId: string }) {
 
     useEffect(() => {
       if (!visibleCard) return
-      if (DEBUG) dlog('EmbedBubble mount', { idx, src, embedSrc, visibleCard })
+      if (debugRef.current) dlog('EmbedBubble mount', { idx, src, embedSrc, visibleCard })
 
       const tFallback = setTimeout(() => {
         if (!loaded) {
-          if (DEBUG) dlog('EmbedBubble fallback timer fired', { idx, src })
+          if (debugRef.current) dlog('EmbedBubble fallback timer fired', { idx, src })
           convertIframeToLink(idx)
         }
       }, 4000)
 
       const tNudge = setTimeout(() => {
         if (visibleCard) {
-          if (DEBUG) dlog('EmbedBubble nudge fired', { idx, src })
+          if (debugRef.current) dlog('EmbedBubble nudge fired', { idx, src })
           pushEmailNudgeOnce(src)
         }
       }, 90_000)
@@ -144,7 +144,7 @@ export default function BotWidget({ botId }: { botId: string }) {
       return () => {
         clearTimeout(tFallback)
         clearTimeout(tNudge)
-        if (DEBUG) dlog('EmbedBubble cleanup', { idx, src })
+        if (debugRef.current) dlog('EmbedBubble cleanup', { idx, src })
       }
     }, [loaded, idx, visibleCard, src, embedSrc])
 
@@ -178,7 +178,7 @@ export default function BotWidget({ botId }: { botId: string }) {
           sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
             if (!loaded) {
-              if (DEBUG) dlog('EmbedBubble iframe onLoad', { idx, embedSrc })
+              if (debugRef.current) dlog('EmbedBubble iframe onLoad', { idx, embedSrc })
               setLoaded(true)
               if (!announcedIframesRef.current.has(`ok:${src}`)) {
                 announcedIframesRef.current.add(`ok:${src}`)
@@ -186,7 +186,7 @@ export default function BotWidget({ botId }: { botId: string }) {
             }
           }}
           onError={() => {
-            if (DEBUG) dlog('EmbedBubble iframe onError', { idx, embedSrc })
+            if (debugRef.current) dlog('EmbedBubble iframe onError', { idx, embedSrc })
             convertIframeToLink(idx)
           }}
         />
@@ -201,19 +201,19 @@ export default function BotWidget({ botId }: { botId: string }) {
 
     useEffect(() => {
       if (!visibleCard) return
-      if (DEBUG) dlog('FunctionCallCalendar mount', { idx, src, embedSrc, visibleCard })
+      if (debugRef.current) dlog('FunctionCallCalendar mount', { idx, src, embedSrc, visibleCard })
 
       const tFallback = setTimeout(() => {
         if (!loaded && !announcedIframesRef.current.has(`fail:${src}`)) {
           announcedIframesRef.current.add(`fail:${src}`)
-          if (DEBUG) dlog('FunctionCallCalendar fallback timer fired', { idx, src })
+          if (debugRef.current) dlog('FunctionCallCalendar fallback timer fired', { idx, src })
           convertIframeToLink(idx)
         }
       }, 4000)
 
       const tNudge = setTimeout(() => {
         if (visibleCard) {
-          if (DEBUG) dlog('FunctionCallCalendar nudge fired', { idx, src })
+          if (debugRef.current) dlog('FunctionCallCalendar nudge fired', { idx, src })
           pushEmailNudgeOnce(src)
         }
       }, 90_000)
@@ -221,7 +221,7 @@ export default function BotWidget({ botId }: { botId: string }) {
       return () => {
         clearTimeout(tFallback)
         clearTimeout(tNudge)
-        if (DEBUG) dlog('FunctionCallCalendar cleanup', { idx, src })
+        if (debugRef.current) dlog('FunctionCallCalendar cleanup', { idx, src })
       }
     }, [loaded, visibleCard, src, idx, embedSrc])
 
@@ -250,12 +250,12 @@ export default function BotWidget({ botId }: { botId: string }) {
           allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
           sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
-            if (DEBUG) dlog('FunctionCallCalendar iframe onLoad', { idx, embedSrc })
+            if (debugRef.current) dlog('FunctionCallCalendar iframe onLoad', { idx, embedSrc })
             setLoaded(true)
             if (!announcedIframesRef.current.has(`ok:${src}`)) announcedIframesRef.current.add(`ok:${src}`)
           }}
           onError={() => {
-            if (DEBUG) dlog('FunctionCallCalendar iframe onError', { idx, embedSrc })
+            if (debugRef.current) dlog('FunctionCallCalendar iframe onError', { idx, embedSrc })
             convertIframeToLink(idx)
           }}
         />
@@ -283,7 +283,6 @@ export default function BotWidget({ botId }: { botId: string }) {
     )
   }
 
-  // >>> CHANGED STRUCTURE <<<
   // Outer wrapper = transparent & non-interactive.
   // Inner card = the visible white panel.
   return (
@@ -422,4 +421,3 @@ export default function BotWidget({ botId }: { botId: string }) {
     </div>
   )
 }
-
