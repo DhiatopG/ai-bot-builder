@@ -261,7 +261,7 @@
     });
   }
 
-  // ---------- UPDATED: bubble hidden while panel is open ----------
+  // ---------- bubble hidden while panel is open ----------
   function ensureBubble() {
     injectStyle();
 
@@ -279,7 +279,7 @@
       }
       var label = document.getElementById('in60-bubble-text-' + botId);
       if (label) label.style.display = 'none';
-      return; // <-- keep hidden while open
+      return;
     }
 
     Object.assign(bubble.style, {
