@@ -45,7 +45,9 @@ export default function BotWidget({ botId }: { botId: string }) {
         roots.slice(0, -1).forEach(n => n.remove())
         if (debugRef.current) console.warn('[BotWidget] removed duplicate roots:', roots.length - 1)
       }
-    } catch {}
+    } catch (e) {
+      if (debugRef.current) console.warn('[BotWidget] dedup guard error:', e)
+    }
   }, [])
 
   // ---------- Parent notifier (stable; no DEBUG capture) ----------
