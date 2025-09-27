@@ -106,6 +106,13 @@
         pointer-events: none !important;
       }
 
+      /* HIDE BUBBLE WHEN OPEN */
+      .in60-open #in60-bubble-${botId} {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
       html, body, #__next { background: transparent !important; }
       html, body { margin: 0 !important; padding: 0 !important; }
 
@@ -119,6 +126,7 @@
         #in60-iframe-${botId} {
           border-radius: 0 !important;
           filter: none !important;
+          background-color: #fff !important; /* opaque on mobile */
         }
       }
     `;
@@ -236,6 +244,7 @@
         setImp(panelIframe, 'border-radius', '0');
         setImp(panelIframe, 'filter', 'none');
         setImp(panelIframe, 'box-shadow', 'none');
+        setImp(panelIframe, 'background-color', '#fff'); // opaque on mobile
       }
     } else {
       setImp(container, 'top', 'auto');
@@ -246,8 +255,10 @@
       setImp(container, 'height', panelHeight);
 
       if (panelIframe) {
-        setImp(panelIframe, 'border-radius', '16px');
-        setImp(panelIframe, 'filter', 'drop-shadow(0 10px 30px rgba(0,0,0,.15))');
+        // IMPORTANT: keep desktop opaque + square while open
+        setImp(panelIframe, 'background-color', '#fff');
+        setImp(panelIframe, 'border-radius', '0');
+        setImp(panelIframe, 'filter', 'none');
       }
     }
   }
@@ -327,7 +338,13 @@
     }
 
     injectStyle();
+
+    // mark document as open (CSS rule hides bubble)
+    try { document.documentElement.classList.add('in60-open'); } catch {}
+
+    // actively hide + remove bubble node to prevent overlap
     hideBubble();
+    try { if (bubble && bubble.parentNode) bubble.parentNode.removeChild(bubble); } catch {}
 
     var host = createContainer();
     host.style.zIndex = String(Z_PANEL);
@@ -338,6 +355,11 @@
 
     if (!iframe.isConnected) host.appendChild(iframe);
     applyResponsive();
+
+    // keep container last in body & absolutely top-most
+    try { if (host !== document.body.lastElementChild) document.body.appendChild(host); } catch {}
+    host.style.zIndex = '2147483647';
+    if (panelIframe) panelIframe.style.zIndex = '2147483647';
 
     try {
       if (Math.min(window.innerWidth, window.innerHeight) < 500) {
@@ -375,6 +397,9 @@
 
       if (mo) { try { mo.disconnect(); } catch {} mo = null; }
     } finally {
+      // drop the open flag so bubble can return
+      try { document.documentElement.classList.remove('in60-open'); } catch {}
+
       try {
         document.body.style.overflow = '';
         document.documentElement.style.overflow = '';
@@ -426,12 +451,21 @@
     }
   }
 
+  // keep our container last in body on resize too
+  function onResize(){
+    applyResponsive();
+    try {
+      var host = document.getElementById('in60-container-' + botId);
+      if (host && host !== document.body.lastElementChild) document.body.appendChild(host);
+    } catch {}
+    ensureBubble();
+  }
+
   function onMessage(e){ if(!e||!e.data)return;
     if(e.data.type==='in60:close') closePanel();
     if(e.data.type==='in60:open')  openPanel();
     if(e.data.type==='in60:destroy') destroy();
   }
-  function onResize(){ applyResponsive(); ensureBubble(); }
   function onKeydown(e){ if(e && e.key==='Escape') closePanel(); }
   function onPageHide(){ destroy(); }
   function onBeforeUnload(){ destroy(); }

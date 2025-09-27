@@ -30,6 +30,9 @@ import { capName, normalizeEmail, isEmail, hasBookingLanguage, stripEarlyBooking
 import { mkReqId } from './utils/ids';
 import { cleanHtml } from './utils/html';
 
+// NEW — cancel flow
+import { handleCancelCTA, maybeOfferCancelButtons, maybeContinueCancelWithEmail } from './cancel/flow';
+
 const DEBUG_CHAT = true; // flip to false to silence
 function dbg(reqId: string, label: string, payload: Record<string, any>) {
   if (!DEBUG_CHAT) return;
@@ -103,6 +106,13 @@ export async function orchestrateChat({
   const recentHistory: { role: 'user'|'assistant'; content: string }[] =
     Array.isArray(history) ? history.map(({ role, content }: any) => ({ role, content })) : [];
   const userLast = String(question);
+
+  // NEW — handle a cancel button click like "cancel_appt:<UUID>" (runs before any LLM work)
+  {
+    const early = await handleCancelCTA({ req, admin, botId, conversation_id, user_auth_id, userLast });
+    if (early) return early;
+  }
+
   const lastMeaningful = getLastMeaningfulUserText(recentHistory as any, userLast);
   const retrievalQuery = isLikelyCaptureInput(userLast) ? (lastMeaningful || userLast) : userLast;
 
@@ -151,6 +161,19 @@ export async function orchestrateChat({
       .find(m => m.role === 'assistant' && String(m.content || '').trim().length > 0)
       ?.content || '';
 
+  // NEW — if we asked for email/phone to cancel last turn and the user just sent an email, continue flow
+  {
+    const cont = await maybeContinueCancelWithEmail({
+      admin,
+      botId,
+      conversation_id,
+      user_auth_id,
+      userLast,
+      lastAssistantText,
+    });
+    if (cont) return cont;
+  }
+
   let intent = detectIntent(userLast, { lastAssistantText });
   if (/\b(toothache|tooth ache|tooth pain|severe pain|swelling|abscess|knocked\s*out|broken|chipped|bleeding|emergency|urgent)\b/i.test(userLast)) {
     intent = 'emergency' as any;
@@ -178,6 +201,15 @@ export async function orchestrateChat({
     }
   } catch {
     void 0; // satisfy no-empty
+  }
+
+  // NEW — fast path: user said "I need to cancel / I want to cancel"
+  {
+    const offer = await maybeOfferCancelButtons({
+      admin, botId, conversation_id, user_auth_id,
+      userLast, entities, visitor_email
+    });
+    if (offer) return offer;
   }
 
   // === EXACT server-side ask detectors you requested ===

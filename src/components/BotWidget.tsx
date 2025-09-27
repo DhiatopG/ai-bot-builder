@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import useChatLogic from './ChatLogic'
 
+const ROOT_ID = 'in60-widget-root' // unique wrapper id used for de-duping
+
 export default function BotWidget({ botId }: { botId: string }) {
   const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
 
@@ -33,6 +35,18 @@ export default function BotWidget({ botId }: { botId: string }) {
   // running inside an iframe (embedded mode)?
   const IN_IFRAME =
     typeof window !== 'undefined' && window.parent && window.parent !== window
+
+  // ----- DEDUP GUARD: ensure only one widget root exists -----
+  useEffect(() => {
+    try {
+      const roots = Array.from(document.querySelectorAll<HTMLElement>(`#${ROOT_ID}`))
+      if (roots.length > 1) {
+        // keep the newest (last), remove older ones
+        roots.slice(0, -1).forEach(n => n.remove())
+        if (debugRef.current) console.warn('[BotWidget] removed duplicate roots:', roots.length - 1)
+      }
+    } catch {}
+  }, [])
 
   // ---------- Parent notifier (stable; no DEBUG capture) ----------
   // Host embed.js listens for: in60:open | in60:close | in60:toggle
@@ -286,7 +300,7 @@ export default function BotWidget({ botId }: { botId: string }) {
   // Outer wrapper = transparent & non-interactive.
   // Inner card = the visible white panel.
   return (
-    <div className="fixed inset-0 md:inset-auto md:bottom-6 md:right-6 z-50 flex items-end md:items-stretch justify-end bg-transparent pointer-events-none">
+    <div id={ROOT_ID} className="fixed inset-0 md:inset-auto md:bottom-6 md:right-6 z-50 flex items-end md:items-stretch justify-end bg-transparent pointer-events-none">
       <div className="md:w-[350px] md:h-[500px] w-full h-full bg-white md:rounded-lg shadow-2xl flex flex-col pointer-events-auto">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white md:rounded-t-lg">
           <div className="flex items-center space-x-3">
@@ -358,19 +372,25 @@ export default function BotWidget({ botId }: { botId: string }) {
                 )}
 
                 {(() => {
-                  const labelsFromButtons = Array.isArray(msg.buttons) ? msg.buttons : []
-                  const labelsFromCtas = Array.isArray(msg.ctas) ? msg.ctas.map((c: any) => c.label) : []
-                  const uniqueLabels = [...new Set([...labelsFromButtons, ...labelsFromCtas])].filter(Boolean)
-                  if (uniqueLabels.length === 0) return null
+                  // UPDATED: send hidden CTA IDs (e.g., "cancel_appt:<UUID>") instead of labels
+                  const ctas = Array.isArray(msg.ctas) ? msg.ctas : [];
+                  const buttons = Array.isArray(msg.buttons) ? msg.buttons.map((label: string) => ({ id: label, label })) : [];
+                  const items: Array<{ id: string; label: string }> = [
+                    ...buttons,
+                    ...ctas.map((c: any) => ({ id: c?.id || String(c?.label || ''), label: String(c?.label || c?.id || '') }))
+                  ].filter(i => i.label);
+
+                  if (items.length === 0) return null;
                   return (
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {uniqueLabels.map((label: string, i: number) => (
+                      {items.map((it, i) => (
                         <button
-                          key={`${label}-${i}`}
-                          onClick={() => sendMessage(label, weekday)}
+                          key={`${it.id}-${i}`}
+                          onClick={() => sendMessage(it.id, weekday)}  // <-- send ID, not label
                           className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
+                          title={it.label}
                         >
-                          {label}
+                          {it.label}
                         </button>
                       ))}
                     </div>
@@ -394,7 +414,7 @@ export default function BotWidget({ botId }: { botId: string }) {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-3 border-t bg-white flex gap-2">
+        <div className="p-3 border-t bg-white flex gap-2 relative z-[1]">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -411,6 +431,7 @@ export default function BotWidget({ botId }: { botId: string }) {
           <button
             onClick={() => sendMessage(undefined, weekday)}
             className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-all duration-150 hover:scale-105"
+            aria-label="Send message"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
               <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
