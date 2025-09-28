@@ -1,7 +1,7 @@
 // src/app/booking/page.tsx
 'use client'
 
-import { Suspense, useMemo } from 'react'
+import { Suspense, useMemo, useEffect } from 'react'   // ← add useEffect
 import { useSearchParams } from 'next/navigation'
 import BookingFormUI, { BookingPayload } from '@/components/BookingFormUI'
 
@@ -41,6 +41,17 @@ function ymdLocal(d: Date) {
 
 function BookingPageInner() {
   const sp = useSearchParams()
+
+  // 🔎 Mobile debug console: only when ?debug=1
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const qs = new URLSearchParams(window.location.search)
+    if (qs.get('debug') !== '1') return
+    const s = document.createElement('script')
+    s.src = 'https://cdn.jsdelivr.net/npm/eruda'
+    s.onload = () => (window as any).eruda?.init()
+    document.body.appendChild(s)
+  }, [])
 
   // Capture once at page-level
   const pageBotId = sp.get('botId') || undefined
