@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-export default function CancelByEmailPage() {
+function CancelByEmailPageInner() {
   const sp = useSearchParams()
 
   // Prefer ?botId= from the link; else fallback to env (set this per clinic if you want)
@@ -94,5 +94,13 @@ export default function CancelByEmailPage() {
         Trouble cancelling? <a className="underline" href="/contact">Contact the clinic</a>.
       </div>
     </main>
+  )
+}
+
+export default function CancelByEmailPage() {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-md p-6 text-sm text-gray-500">Loading…</main>}>
+      <CancelByEmailPageInner />
+    </Suspense>
   )
 }
