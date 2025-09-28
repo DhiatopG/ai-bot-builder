@@ -1,4 +1,4 @@
-// src/app/booking/page.tsx  (or wherever your booking page lives)
+// src/app/booking/page.tsx
 'use client'
 
 import { Suspense, useMemo } from 'react'
@@ -117,14 +117,30 @@ function BookingPageInner() {
   }, [pageBotId, tz])
 
   return (
-    <BookingFormUI
-      botId={pageBotId}
-      conversationId={conversationId}
-      defaultDuration={defaultDuration}
-      isEmbedded={isEmbedded}
-      loadTimeSlots={loadTimeSlots}
-      onSubmit={onSubmit}
-    />
+    <>
+      <BookingFormUI
+        botId={pageBotId}
+        conversationId={conversationId}
+        defaultDuration={defaultDuration}
+        isEmbedded={isEmbedded}
+        loadTimeSlots={loadTimeSlots}
+        onSubmit={onSubmit}
+      />
+
+      {/* Optional: tiny link to the email-only cancel page */}
+      {pageBotId && (
+        <div className="mt-4 text-xs text-gray-500">
+          Need to cancel?{' '}
+          <a
+            className="underline"
+            href={`/booking/cancel?botId=${encodeURIComponent(pageBotId)}`}
+          >
+            Cancel with your email
+          </a>
+          .
+        </div>
+      )}
+    </>
   )
 }
 

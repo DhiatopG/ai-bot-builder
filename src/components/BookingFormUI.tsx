@@ -43,11 +43,6 @@ interface BookingFormProps {
   defaultDuration?: number;
   isEmbedded?: boolean;
 
-  /**
-   * Optional: generate/override raw time slots for a given date & timezone.
-   * Return an array like ["09:00","09:30","10:00",...].
-   * If omitted, we auto-generate slots or call /api/availability.
-   */
   loadTimeSlots?: (args: {
     date: Date;
     timezone: string;
@@ -55,11 +50,6 @@ interface BookingFormProps {
     conversationId?: string;
   }) => Promise<string[]>;
 
-  /**
-   * Optional: mark full days as NOT bookable.
-   * Return an array of Date objects that will be disabled for the visible month.
-   * If omitted, we call /api/availability for month-level disabled days.
-   */
   loadDisabledDays?: (args: {
     visibleMonthStart: Date;
     visibleMonthEnd: Date;
@@ -67,26 +57,15 @@ interface BookingFormProps {
     botId?: string;
   }) => Promise<Date[]>;
 
-  /**
-   * Optional: handle submission to your backend.
-   * If omitted, we POST to /api/create-event by default.
-   */
   onSubmit?: (payload: BookingPayload) => Promise<
     | { ok: true; appointmentId?: string }
     | { ok: false; error: string }
   >;
 
-  /**
-   * Optional: change default generation window.
-   */
   businessHours?: BusinessHours;
 
-  /**
-   * Optional static list to disable (e.g., holidays). Merged with loadDisabledDays().
-   */
   extraDisabledDays?: Date[];
 
-  /** Optional initial values for convenience */
   initialName?: string;
   initialEmail?: string;
   initialPhone?: string;
@@ -124,6 +103,11 @@ export default function BookingFormUI({
   const conversationIdFromUrl = sp?.get("conversationId") ?? undefined;
   const embeddedFromUrl = sp?.get("embed") === "1";
 
+  const modeFromUrl =
+    (sp?.get("mode") as "cancel" | "reschedule" | "book" | null) ?? null;
+  const prefillEmailFromUrl = sp?.get("email") ?? "";
+  const prefillPhoneFromUrl = sp?.get("phone") ?? "";
+
   // Resolve runtime values (props take priority, then URL)
   const resolvedBotId = useMemo(
     () => botId ?? botIdFromUrl,
@@ -142,12 +126,23 @@ export default function BookingFormUI({
   const [timezone, setTimezone] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Modes
+  const [actionMode, setActionMode] = useState<"book" | "cancel" | "reschedule">(
+    modeFromUrl ?? "book"
+  );
+
+  // Email-only cancel state
+  const [cancelEmail, setCancelEmail] = useState<string>(prefillEmailFromUrl);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelSuccess, setCancelSuccess] = useState<string | null>(null);
+
   // date grid + availability
   const [visibleMonth, setVisibleMonth] = useState<Date>(startOfDay(new Date()));
   const [disabledDays, setDisabledDays] = useState<Date[]>(extraDisabledDays);
   const [disabledLoading, setDisabledLoading] = useState(false);
 
-  // time slots for a selected day
+  // time slots
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [timesLoading, setTimesLoading] = useState(false);
 
@@ -158,8 +153,8 @@ export default function BookingFormUI({
     date: null,
     time: "",
     name: initialName,
-    email: initialEmail,
-    phone: initialPhone,
+    email: initialEmail || prefillEmailFromUrl,
+    phone: initialPhone || prefillPhoneFromUrl,
     notes: "",
   });
 
@@ -187,7 +182,6 @@ export default function BookingFormUI({
     return { h, m };
   };
 
-  // local fallback generator (only used if availability API isn't reachable)
   const defaultGenerateSlotsLocal = (d: Date) => {
     const { h: sh, m: sm } = parseHHMM(businessHours.start);
     const { h: eh, m: em } = parseHHMM(businessHours.end);
@@ -206,6 +200,44 @@ export default function BookingFormUI({
     }
     return out;
   };
+
+  const smoothScrollTo = (id: string) => {
+    if (typeof window === "undefined") return;
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  useEffect(() => {
+    if (modeFromUrl === "cancel") {
+      setTimeout(() => smoothScrollTo("cancel-section"), 0);
+    } else if (modeFromUrl === "reschedule") {
+      setTimeout(() => smoothScrollTo("book-section"), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---------- auto-resize iframe when embedded ---------- */
+  useEffect(() => {
+    if (!resolvedIsEmbedded) return;
+
+    const postSize = () => {
+      const h = document.documentElement.scrollHeight;
+      window.parent?.postMessage({ type: "booking:resize", height: h }, "*");
+    };
+
+    postSize();
+    const ro = new ResizeObserver(postSize);
+    ro.observe(document.documentElement);
+
+    window.addEventListener("load", postSize);
+    window.addEventListener("resize", postSize);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("load", postSize);
+      window.removeEventListener("resize", postSize);
+    };
+  }, [resolvedIsEmbedded, currentStep, timesLoading, disabledLoading, timeSlots.length]);
 
   /* ---------- DEFAULT dynamic providers (if you don't pass custom hooks) ---------- */
 
@@ -257,21 +289,18 @@ export default function BookingFormUI({
       const res = await fetch(url.toString(), { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to load days");
-      // API returns ["yyyy-mm-dd"] → convert to Date at midnight UTC (safe for day-only disable)
       return (json?.disabledDays ?? []).map(
         (s: string) => new Date(`${s}T00:00:00Z`)
       );
     } catch {
-      // fall back to whatever static extraDisabledDays were passed
       return extraDisabledDays;
     }
   }
 
-  // Choose provided hooks or built-in defaults
   const effectiveLoadTimeSlots = loadTimeSlots ?? defaultLoadTimeSlots;
   const effectiveLoadDisabledDays = loadDisabledDays ?? defaultLoadDisabledDays;
 
-  /* ---------- month-level disabled days (hook to your API) ---------- */
+  /* ---------- month-level disabled days ---------- */
   useEffect(() => {
     let cancelled = false;
     const start = new Date(
@@ -299,8 +328,9 @@ export default function BookingFormUI({
             })
           : extraDisabledDays;
         if (!cancelled) setDisabledDays([...extraDisabledDays, ...(res ?? [])]);
-      } catch {
-        // keep current disabledDays on failure
+      } catch (err) {
+        // keep current disabledDays on failure; log for debugging to satisfy no-empty
+        console.debug("[BookingFormUI] loadDisabledDays failed:", err);
       } finally {
         if (!cancelled) setDisabledLoading(false);
       }
@@ -312,7 +342,7 @@ export default function BookingFormUI({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleMonth, timezone, resolvedBotId]);
 
-  /* ---------- day-level time slots (hook to your API) ---------- */
+  /* ---------- day-level time slots ---------- */
   useEffect(() => {
     if (!formData.date) return;
     let cancelled = false;
@@ -328,7 +358,6 @@ export default function BookingFormUI({
         });
         if (!cancelled) {
           setTimeSlots(slots);
-          // if previously selected time is no longer present → clear it
           if (formData.time && !slots.includes(formData.time)) {
             setFormData((p) => ({ ...p, time: "" }));
           }
@@ -355,6 +384,9 @@ export default function BookingFormUI({
     if (!date) return;
     setFormData((p) => ({ ...p, date, time: "" }));
     setCurrentStep("time");
+    if (actionMode !== "book" && actionMode !== "reschedule") {
+      setActionMode("book");
+    }
   };
 
   const handleSelectTime = (t: string) => {
@@ -382,13 +414,17 @@ export default function BookingFormUI({
       date: null,
       time: "",
       name: initialName,
-      email: initialEmail,
-      phone: initialPhone,
+      email: initialEmail || prefillEmailFromUrl,
+      phone: initialPhone || prefillPhoneFromUrl,
       notes: "",
     });
     setErrors({});
     setSubmitError(null);
     setCurrentStep("date");
+    setActionMode("book");
+    setCancelEmail(prefillEmailFromUrl);
+    setCancelSuccess(null);
+    setCancelError(null);
   };
 
   const canSubmit =
@@ -397,12 +433,11 @@ export default function BookingFormUI({
     !!formData.name.trim() &&
     isValidEmail(formData.email);
 
-  // Default submitter (if you didn't pass onSubmit): calls /api/create-event
+  // Default submitter (booking)
   async function defaultSubmitter(p: BookingPayload): Promise<
     { ok: true; appointmentId?: string } | { ok: false; error: string }
   > {
     try {
-      // Build local start/end from date+time, then to ISO strings (UTC).
       const startLocal = new Date(`${p.date}T${p.time}:00`);
       const endLocal = new Date(startLocal.getTime() + p.duration * 60_000);
 
@@ -456,10 +491,13 @@ export default function BookingFormUI({
       const res = await effectiveSubmit(payload);
       if (!res.ok) throw new Error(res.error || "Unknown error");
 
-      // notify host if embedded
       if (typeof window !== "undefined") {
         window.parent?.postMessage(
-          { type: "booking:created", preview: onSubmit ? false : true },
+          {
+            type:
+              actionMode === "reschedule" ? "booking:rescheduled" : "booking:created",
+            preview: onSubmit ? false : true,
+          },
           "*"
         );
       }
@@ -468,6 +506,60 @@ export default function BookingFormUI({
       setSubmitError(err?.message || "Failed to book. Please try again.");
     } finally {
       setSubmitLoading(false);
+    }
+  };
+
+  // NEW: email-only cancel submitter
+  async function defaultCancelSubmitter(args: {
+    email: string;
+  }): Promise<{ ok: true; message?: string } | { ok: false; error: string }> {
+    try {
+      const res = await fetch("/api/appointments/cancel-by-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botId: resolvedBotId,
+          email: args.email?.trim().toLowerCase(),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          ok: false as const,
+          error:
+            (json?.error === "no_upcoming_match" && "No upcoming confirmed appointment found for this email.") ||
+            json?.error ||
+            `HTTP ${res.status}`,
+        };
+      }
+      return { ok: true as const, message: "Canceled successfully" };
+    } catch (e: any) {
+      return { ok: false as const, error: e?.message ?? "Network error" };
+    }
+  }
+
+  const doCancel = async () => {
+    setCancelError(null);
+    setCancelSuccess(null);
+
+    if (!cancelEmail || !isValidEmail(cancelEmail)) {
+      setCancelError("Please enter the email you used to book.");
+      return;
+    }
+
+    try {
+      setCancelLoading(true);
+      const res = await defaultCancelSubmitter({ email: cancelEmail });
+      if (!res.ok) throw new Error(res.error);
+
+      if (typeof window !== "undefined") {
+        window.parent?.postMessage({ type: "booking:canceled" }, "*");
+      }
+      setCancelSuccess("✅ Your appointment has been canceled.");
+    } catch (e: any) {
+      setCancelError(e?.message || "Failed to cancel. Please try again.");
+    } finally {
+      setCancelLoading(false);
     }
   };
 
@@ -481,17 +573,122 @@ export default function BookingFormUI({
     ? "w-full max-w-md mx-auto bg-white rounded-lg shadow-sm border p-4"
     : "w-full max-w-md mx-auto bg-white rounded-lg shadow-sm border p-6";
 
+  const primaryBtn =
+    "px-3 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium";
+  const secondaryBtn =
+    "px-3 py-2 rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200";
+
   /* ================================================================== */
 
   return (
     <div className={containerClass}>
       <div className={cardClass}>
+        {/* Top CTA buttons */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+          <button
+            onClick={() => {
+              setActionMode("cancel");
+              setTimeout(() => smoothScrollTo("cancel-section"), 0);
+            }}
+            className={secondaryBtn}
+          >
+            Cancel Appointment
+          </button>
+          <button
+            onClick={() => {
+              setActionMode("reschedule");
+              setCurrentStep("date");
+              setTimeout(() => smoothScrollTo("book-section"), 0);
+            }}
+            className={primaryBtn}
+          >
+            Reschedule Appointment
+          </button>
+        </div>
+
+        {/* Optional header */}
         {!resolvedIsEmbedded && (
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Book an Appointment</h1>
-            <p className="text-gray-600">Choose your preferred date and time</p>
+          <div className="text-center mb-4">
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+              {actionMode === "reschedule" ? "Reschedule Appointment" : "Book an Appointment"}
+            </h1>
+            <p className="text-gray-600">
+              {actionMode === "reschedule"
+                ? "Pick a new date and time that works for you."
+                : "Choose your preferred date and time"}
+            </p>
           </div>
         )}
+
+        {/* Email-only Cancel Section */}
+        <div id="cancel-section" className="mb-6">
+          {actionMode === "cancel" && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-3">
+              <h2 className="text-lg font-semibold text-red-700">Cancel your appointment</h2>
+              <p className="text-sm text-red-700/90">
+                Enter the same <strong>email</strong> you used when booking. We’ll cancel your soonest upcoming confirmed appointment.
+              </p>
+
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <input
+                    value={cancelEmail}
+                    onChange={(e) => setCancelEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {cancelError && (
+                <div className="text-sm text-red-700">{cancelError}</div>
+              )}
+              {cancelSuccess && (
+                <div className="text-sm text-green-700">{cancelSuccess}</div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={doCancel}
+                  disabled={cancelLoading}
+                  className={primaryBtn}
+                >
+                  {cancelLoading ? "Canceling…" : "Confirm Cancel"}
+                </button>
+                <button
+                  onClick={() => {
+                    setCancelEmail(prefillEmailFromUrl);
+                    setCancelError(null);
+                    setCancelSuccess(null);
+                  }}
+                  className="px-3 py-2 rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200 text-sm font-medium"
+                >
+                  Reset
+                </button>
+              </div>
+              <p className="text-xs text-gray-600">
+                Trouble canceling?{" "}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.parent?.postMessage({ type: "booking:contact" }, "*");
+                  }}
+                  className="underline"
+                >
+                  Contact the clinic
+                </a>
+                .
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Anchor for booking/reschedule section */}
+        <div id="book-section" />
 
         {/* Steps indicator */}
         <div className="flex items-center justify-center mb-6">
@@ -549,17 +746,29 @@ export default function BookingFormUI({
         {/* DATE STEP */}
         {currentStep === "date" && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900 text-center">Select a Date</h2>
-            <div className="flex justify-center">
+            <h2 className="text-lg font-semibold text-gray-900 text-center">
+              Select a Date
+            </h2>
+
+            {/* Wrap hides horizontal overflow in small iframes */}
+            <div className="flex justify-center overflow-x-hidden">
               <DayPicker
                 mode="single"
+                numberOfMonths={1} // keep it narrow for iframes
                 selected={formData.date || undefined}
                 onSelect={handleSelectDate}
                 onMonthChange={setVisibleMonth}
-                disabled={[
-                  { before: startOfDay(new Date()) },
-                  ...disabledDays,
-                ]}
+                disabled={[{ before: startOfDay(new Date()) }, ...disabledDays]}
+                // compact calendar when embedded
+                style={
+                  resolvedIsEmbedded
+                    ? ({
+                        "--rdp-cell-size": "34px",
+                        "--rdp-caption-font-size": "14px",
+                        "--rdp-accent-color": "#2563eb",
+                      } as React.CSSProperties)
+                    : undefined
+                }
                 className="rdp-custom"
                 classNames={{
                   months:
@@ -568,14 +777,17 @@ export default function BookingFormUI({
                   caption: "flex justify-center pt-1 relative items-center",
                   caption_label: "text-sm font-medium",
                   nav: "space-x-1 flex items-center",
-                  nav_button: "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
+                  nav_button:
+                    "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
                   nav_button_previous: "absolute left-1",
                   nav_button_next: "absolute right-1",
                   table: "w-full border-collapse space-y-1",
                   head_row: "flex",
-                  head_cell: "text-gray-500 rounded-md w-9 font-normal text-[0.8rem]",
+                  head_cell:
+                    "text-gray-500 rounded-md w-9 font-normal text-[0.8rem]",
                   row: "flex w-full mt-2",
-                  cell: "text-center text-sm p-0 relative [&:has([aria-selected])]:bg-blue-100 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                  cell:
+                    "text-center text-sm p-0 relative [&:has([aria-selected])]:bg-blue-100 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
                   day: "h-9 w-9 p-0 font-normal aria-selected:opacity-100 hover:bg-gray-100 rounded-md",
                   day_selected:
                     "bg-blue-600 text-white hover:bg-blue-600 hover:text-white focus:bg-blue-600 focus:text-white",
@@ -586,8 +798,11 @@ export default function BookingFormUI({
                 }}
               />
             </div>
+
             {disabledLoading && (
-              <p className="text-xs text-center text-gray-500">Loading availability…</p>
+              <p className="text-xs text-center text-gray-500">
+                Loading availability…
+              </p>
             )}
           </div>
         )}
@@ -614,7 +829,9 @@ export default function BookingFormUI({
             </div>
 
             {timesLoading ? (
-              <div className="text-sm text-center text-gray-500">Loading time slots…</div>
+              <div className="text-sm text-center text-gray-500">
+                Loading time slots…
+              </div>
             ) : timeSlots.length === 0 ? (
               <div className="text-sm text-center text-gray-500">
                 No available times for this date. Please pick another day.
@@ -663,7 +880,9 @@ export default function BookingFormUI({
             <div className="bg-gray-50 rounded-lg p-3 mb-2">
               <div className="text-sm text-gray-600">
                 <div className="font-medium">Selected:</div>
-                <div>{formData.date && format(formData.date, "EEEE, MMMM d, yyyy")}</div>
+                <div>
+                  {formData.date && format(formData.date, "EEEE, MMMM d, yyyy")}
+                </div>
                 <div>
                   {formData.time} ({defaultDuration} minutes)
                 </div>
@@ -672,7 +891,10 @@ export default function BookingFormUI({
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="name"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Full Name *
                 </label>
                 <input
@@ -685,11 +907,16 @@ export default function BookingFormUI({
                   }`}
                   placeholder="Enter your full name"
                 />
-                {errors.name && <p className="text-sm text-red-600 mt-1">{errors.name}</p>}
+                {errors.name && (
+                  <p className="text-sm text-red-600 mt-1">{errors.name}</p>
+                )}
               </div>
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="email"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Email *
                 </label>
                 <input
@@ -703,11 +930,16 @@ export default function BookingFormUI({
                   }`}
                   placeholder="Enter your email address"
                 />
-                {errors.email && <p className="text-sm text-red-600 mt-1">{errors.email}</p>}
+                {errors.email && (
+                  <p className="text-sm text-red-600 mt-1">{errors.email}</p>
+                )}
               </div>
 
               <div>
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="phone"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Phone (optional)
                 </label>
                 <input
@@ -721,7 +953,10 @@ export default function BookingFormUI({
               </div>
 
               <div>
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="notes"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Notes (optional)
                 </label>
                 <textarea
@@ -745,7 +980,13 @@ export default function BookingFormUI({
               disabled={!canSubmit || submitLoading}
               className="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              {submitLoading ? "Booking…" : "Book Appointment"}
+              {submitLoading
+                ? actionMode === "reschedule"
+                  ? "Rescheduling…"
+                  : "Booking…"
+                : actionMode === "reschedule"
+                ? "Confirm Reschedule"
+                : "Book Appointment"}
             </button>
 
             {resolvedIsEmbedded && (
@@ -772,8 +1013,12 @@ export default function BookingFormUI({
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
 
-            <h2 className="text-xl font-semibold text-gray-900">Booking Confirmed!</h2>
-            <p className="text-gray-600">We’ll send confirmation details to your email shortly.</p>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {actionMode === "reschedule" ? "Rescheduled!" : "Booking Confirmed!"}
+            </h2>
+            <p className="text-gray-600">
+              We’ll send confirmation details to your email shortly.
+            </p>
 
             <div className="bg-gray-50 rounded-lg p-4 text-left">
               <h3 className="font-medium text-gray-900 mb-3">Appointment Details:</h3>
@@ -817,11 +1062,36 @@ export default function BookingFormUI({
               onClick={handleReset}
               className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
             >
-              Book Another Appointment
+              {actionMode === "reschedule" ? "Reschedule Again" : "Book Another Appointment"}
             </button>
           </div>
         )}
       </div>
+
+      {/* prevent horizontal scrollbars in narrow iframes + ensure DayPicker fits */}
+      <style jsx global>{`
+        html,
+        body {
+          overflow-x: hidden;
+        }
+        /* Fit DayPicker inside narrow iframes without side scrolling */
+        .rdp {
+          width: 100%;
+          max-width: 360px;
+          margin: 0 auto;
+        }
+        .rdp-months {
+          display: block;
+        }
+        .rdp-table {
+          width: 100%;
+          table-layout: fixed;
+        }
+        .rdp-head_cell,
+        .rdp-day {
+          width: auto;
+        }
+      `}</style>
     </div>
   );
 }
