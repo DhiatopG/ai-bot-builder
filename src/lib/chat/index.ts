@@ -247,6 +247,22 @@ export async function orchestrateChat({
     rawUserText: meaningfulUserText || userLast
   });
 
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // ---- BOOKING SHORT-CIRCUIT (must run before any KB/LLM) ---- // <<< CHANGE
+  const bookingNow =
+    intentForAction === 'booking' ||
+    bookingFlags?.strongBookingNow ||
+    bookingFlags?.bookingYes ||
+    bookingFlags?.userAskedToOpen;
+
+  if (bookingNow) {
+    // If rules didn’t already choose a booking step, force a confirm
+    if (!action || (action.type !== 'confirm' && action.type !== 'open_calendar')) {
+      action = { type: 'confirm', message: 'Would you like to see available times now?' } as any;
+    }
+  }
+  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
   // --- debug: context & booking ---
   dbg(reqId, 'context.init', {
     botId,
@@ -321,8 +337,8 @@ export async function orchestrateChat({
     everProvidedEmail,
   });
 
-  // --- KB FALLBACK MUST NOT BLOCK CAPTURE CONTINUATIONS ---
-  if (!kbHasCoverage) {
+  // --- KB FALLBACK MUST NOT BLOCK BOOKING OR CAPTURE CONTINUATIONS --- // <<< CHANGE
+  if (!kbHasCoverage && !(action && (action.type === 'confirm' || action.type === 'open_calendar'))) {
     const justGaveName =
       (lastAskedName || _askedNameLast || askedNameBefore) &&
       resolvedName && isLikelyRealName(resolvedName) &&
@@ -497,13 +513,21 @@ export async function orchestrateChat({
   const resp = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages, temperature: 0.3 });
   let finalAnswer = resp.choices[0]?.message?.content?.trim() || String(action.message || '');
 
-  // anti-booking early
+  // anti-booking early (do NOT suppress on real booking turns) // <<< CHANGE
   const assistantTurnsSoFar = recentHistory.filter(({ role }) => role === 'assistant').length;
   const lowIntentInfo = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
   const allowLeadCapture =
     !declinedNameSinceAsk(recentHistory as any, lastNameAskIndex(recentHistory as any));
-  const earlyNoBooking = allowLeadCapture && assistantTurnsSoFar < 2;
-  if (earlyNoBooking && !bookingFlags.strongBookingNow && hasBookingLanguage(finalAnswer)) {
+
+  const bookingNow2 =
+    intentForAction === 'booking' ||
+    bookingFlags?.strongBookingNow ||
+    bookingFlags?.bookingYes ||
+    bookingFlags?.userAskedToOpen;
+
+  const earlyNoBooking = !bookingNow2 && allowLeadCapture && assistantTurnsSoFar < 2;
+
+  if (earlyNoBooking && hasBookingLanguage(finalAnswer)) {
     const stripped = stripEarlyBookingLanguage(finalAnswer).trim();
     finalAnswer = stripped || finalAnswer;
   }
