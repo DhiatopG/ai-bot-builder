@@ -1,9 +1,14 @@
+// src/components/BotWidget.tsx
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import useChatLogic from './ChatLogic'
 
 const ROOT_ID = 'in60-widget-root' // unique wrapper id used for de-duping
+
+// HEIGHT TOKENS used for mobile-safe embed viewport
+const CHAT_HEADER_PX = 64   // top bar height
+const CHAT_INPUT_PX  = 64   // composer (textarea + send) height
 
 export default function BotWidget({ botId }: { botId: string }) {
   const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
@@ -167,7 +172,7 @@ export default function BotWidget({ botId }: { botId: string }) {
     if (!visibleCard) return null
 
     return (
-      <div className="relative mt-2">
+      <div className="relative mt-2 h-full">
         <button
           aria-label="Close calendar"
           className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
@@ -183,13 +188,9 @@ export default function BotWidget({ botId }: { botId: string }) {
         <iframe
           src={embedSrc}
           width="100%"
-          height={
-            /calendar|schedule|meeting|booking|calendly|tidycal|zoho|vcita|appointlet|cal\.com|youcanbook/i.test(embedSrc)
-              ? '600'
-              : '300'
-          }
-          className="w-full"
-          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', display: 'block', overflow: 'hidden' }}
+          height="100%"
+          className="w-full h-full block"
+          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', overflow: 'hidden' }}
           allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
           sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
@@ -244,7 +245,7 @@ export default function BotWidget({ botId }: { botId: string }) {
     if (!visibleCard) return null
 
     return (
-      <div className="relative mt-2">
+      <div className="relative mt-2 h-full">
         <button
           aria-label="Close calendar"
           className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
@@ -260,9 +261,9 @@ export default function BotWidget({ botId }: { botId: string }) {
         <iframe
           src={embedSrc}
           width="100%"
-          height="600"
-          className="w-full"
-          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', display: 'block', overflow: 'hidden' }}
+          height="100%"
+          className="w-full h-full block"
+          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', overflow: 'hidden' }}
           allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
           sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
@@ -334,73 +335,96 @@ export default function BotWidget({ botId }: { botId: string }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 text-sm text-gray-800 space-y-3 bg-white">
-          {messages.map((msg: any, idx: number) => (
-            <div key={idx} className={`flex gap-2 items-start ${msg.sender === 'bot' ? 'self-start' : 'self-end'}`}>
-              {msg.sender === 'bot' && logoUrl && (
-                <img src={logoUrl} alt="Bot Logo" className="w-8 h-8 rounded-full border border-gray-300 mt-1" />
-              )}
-              <div
-                className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap ${
-                  msg.iframe ? 'w-full max-w-full' : 'max-w-[75%]'
-                } ${msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-blue-600 text-white'}`}
-              >
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: String(msg.text || '').replace(
-                      /(https?:\/\/[^\s<>"')\]]+)/g,
-                      (rawUrl) => {
-                        const cleanedUrl = rawUrl.replace(/[.)\],]+$/, '')
-                        return `<a href="${cleanedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${cleanedUrl}</a>`
-                      }
-                    ),
-                  }}
-                ></div>
-
-                {msg.iframe && <EmbedBubble src={msg.iframe} idx={idx} />}
-
-                {msg.function_call?.name === 'show_calendar' && (
-                  <FunctionCallCalendar
-                    src={(() => {
-                      try { return JSON.parse(msg.function_call.arguments).url } catch { return '' }
-                    })()}
-                    idx={idx}
-                  />
-                )}
-
-                {msg.link && (
-                  <a href={msg.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline block mt-2">
-                    Open Booking Page
-                  </a>
-                )}
-
-                {(() => {
-                  // UPDATED: send hidden CTA IDs (e.g., "cancel_appt:<UUID>") instead of labels
-                  const ctas = Array.isArray(msg.ctas) ? msg.ctas : [];
-                  const buttons = Array.isArray(msg.buttons) ? msg.buttons.map((label: string) => ({ id: label, label })) : [];
-                  const items: Array<{ id: string; label: string }> = [
-                    ...buttons,
-                    ...ctas.map((c: any) => ({ id: c?.id || String(c?.label || ''), label: String(c?.label || c?.id || '') }))
-                  ].filter(i => i.label);
-
-                  if (items.length === 0) return null;
-                  return (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {items.map((it, i) => (
-                        <button
-                          key={`${it.id}-${i}`}
-                          onClick={() => sendMessage(it.id, weekday)}  // <-- send ID, not label
-                          className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
-                          title={it.label}
-                        >
-                          {it.label}
-                        </button>
-                      ))}
+          {messages.map((msg: any, idx: number) => {
+            // ---- EMBED MODE (full-bleed, viewport-height) ----
+            if (msg.iframe) {
+              return (
+                <div key={idx} className="w-full">
+                  <div className="-mx-3 my-2">
+                    <div className="relative bg-transparent border-0 shadow-none rounded-none">
+                      <div
+                        className="overflow-hidden pb-[env(safe-area-inset-bottom)]"
+                        style={{
+                          height: `calc(100dvh - ${CHAT_HEADER_PX}px - ${CHAT_INPUT_PX}px)`,
+                          minHeight: '60dvh',
+                          maxHeight: '100dvh',
+                        }}
+                      >
+                        <EmbedBubble src={msg.iframe} idx={idx} />
+                      </div>
                     </div>
-                  )
-                })()}
+                  </div>
+                </div>
+              )
+            }
+
+            // ---- NORMAL BUBBLE MODE ----
+            return (
+              <div key={idx} className={`flex gap-2 items-start ${msg.sender === 'bot' ? 'self-start' : 'self-end'}`}>
+                {msg.sender === 'bot' && logoUrl && (
+                  <img src={logoUrl} alt="Bot Logo" className="w-8 h-8 rounded-full border border-gray-300 mt-1" />
+                )}
+                <div
+                  className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap max-w-[75%] ${
+                    msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-blue-600 text-white'
+                  }`}
+                >
+                  <div
+                    dangerouslySetInnerHTML={{
+                      __html: String(msg.text || '').replace(
+                        /(https?:\/\/[^\s<>"')\]]+)/g,
+                        (rawUrl) => {
+                          const cleanedUrl = rawUrl.replace(/[.)\],]+$/, '')
+                          return `<a href="${cleanedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${cleanedUrl}</a>`
+                        }
+                      ),
+                    }}
+                  />
+
+                  {msg.function_call?.name === 'show_calendar' && (
+                    <FunctionCallCalendar
+                      src={(() => {
+                        try { return JSON.parse(msg.function_call.arguments).url } catch { return '' }
+                      })()}
+                      idx={idx}
+                    />
+                  )}
+
+                  {msg.link && (
+                    <a href={msg.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline block mt-2">
+                      Open Booking Page
+                    </a>
+                  )}
+
+                  {(() => {
+                    // UPDATED: send hidden CTA IDs (e.g., "cancel_appt:<UUID>") instead of labels
+                    const ctas = Array.isArray(msg.ctas) ? msg.ctas : [];
+                    const buttons = Array.isArray(msg.buttons) ? msg.buttons.map((label: string) => ({ id: label, label })) : [];
+                    const items: Array<{ id: string; label: string }> = [
+                      ...buttons,
+                      ...ctas.map((c: any) => ({ id: c?.id || String(c?.label || ''), label: String(c?.label || c?.id || '') }))
+                    ].filter(i => i.label);
+
+                    if (items.length === 0) return null;
+                    return (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {items.map((it, i) => (
+                          <button
+                            key={`${it.id}-${i}`}
+                            onClick={() => sendMessage(it.id, weekday)}  // <-- send ID, not label
+                            className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
+                            title={it.label}
+                          >
+                            {it.label}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
 
           {isTyping && (
             <div className="flex gap-2 items-start">
