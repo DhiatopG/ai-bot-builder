@@ -119,6 +119,18 @@ export async function POST(req: NextRequest) {
           attendees: [
             invitee_email ? { email: invitee_email, displayName: invitee_name || undefined } : undefined,
           ].filter(Boolean) as any[],
+
+          // 👇 NEW: mark as ours so reschedule/cancel logic can safely target only bot-created events
+          extendedProperties: {
+            private: {
+              source: 'in60second',
+              bot_id,
+              appointment_id: appt.id,
+              conversation_id: conversation_id ?? '',
+            },
+          },
+          // Optional hardening (keeps control with owner)
+          guestsCanModify: false,
         },
       })
 

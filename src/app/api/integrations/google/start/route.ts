@@ -16,10 +16,11 @@ export async function GET(req: Request) {
 
   const state = Buffer.from(JSON.stringify({ next })).toString('base64url')
   const scopes = [
-    'openid','email','profile',
-    'https://www.googleapis.com/auth/calendar.events',
-    'https://www.googleapis.com/auth/calendar.readonly',
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/calendar.freebusy',
+    'https://www.googleapis.com/auth/calendar.events.owned',
   ].join(' ')
 
   const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth')
