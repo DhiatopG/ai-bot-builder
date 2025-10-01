@@ -58,12 +58,6 @@ export async function GET(req: Request) {
     const botId = url.searchParams.get("botId") || "";
     const scope = (url.searchParams.get("scope") || "").toLowerCase();
 
-    // Accept both names: 'timezone' or 'tz'
-    const tz =
-      url.searchParams.get("timezone") ||
-      url.searchParams.get("tz") ||
-      "UTC";
-
     if (!botId) {
       return NextResponse.json(
         { error: "Missing botId" },
@@ -72,6 +66,22 @@ export async function GET(req: Request) {
     }
 
     const supabase = await createServerClient();
+
+    // ----- Dynamic timezone resolution (no hardcoding) -----
+    let tz =
+      url.searchParams.get("timezone") ||
+      url.searchParams.get("tz") ||
+      undefined;
+
+    if (!tz) {
+      const { data: botRow } = await supabase
+        .from("bots")
+        .select("default_timezone")
+        .eq("id", botId)
+        .maybeSingle();
+      tz = botRow?.default_timezone || "UTC";
+    }
+    // -------------------------------------------------------
 
     // =========================
     // MODE A: Month grid (scope=days)
@@ -96,7 +106,8 @@ export async function GET(req: Request) {
         .from("appointments")
         .select("starts_at, ends_at, status")
         .eq("bot_id", botId)
-        .in("status", ["confirmed", "rescheduled"])
+        // include 'pending' so newly created holds block immediately
+        .in("status", ["pending", "confirmed", "rescheduled"])
         .gte("starts_at", isoStart)
         .lte("starts_at", isoEnd);
 
@@ -197,7 +208,8 @@ export async function GET(req: Request) {
       .from("appointments")
       .select("starts_at, ends_at, status")
       .eq("bot_id", botId)
-      .in("status", ["confirmed", "rescheduled"])
+      // include 'pending' so the slot hides immediately after insert
+      .in("status", ["pending", "confirmed", "rescheduled"])
       .gte("starts_at", isoDayStart)
       .lte("starts_at", isoDayEnd);
 
