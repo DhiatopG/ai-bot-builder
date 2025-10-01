@@ -3,11 +3,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { DayPicker } from "react-day-picker";
-import { format, addMinutes, startOfDay } from "date-fns";
+import { format, startOfDay } from "date-fns";
 import { Calendar, Clock, User, CheckCircle, ArrowLeft } from "lucide-react";
 import "react-day-picker/dist/style.css";
 
-/* ---------- public types you can import elsewhere ---------- */
+/* ---------- public types ---------- */
 
 export type BookingStep = "date" | "time" | "details" | "success";
 
@@ -26,16 +26,7 @@ export interface BookingPayload {
   timezone: string;
 }
 
-export interface BusinessHours {
-  /** "09:00" */
-  start: string;
-  /** "17:00" */
-  end: string;
-  /** e.g. 30 */
-  intervalMinutes: number;
-}
-
-/* ---------- component props (hook points for your logic) ---------- */
+/* ---------- component props ---------- */
 
 interface BookingFormProps {
   botId?: string;
@@ -61,8 +52,6 @@ interface BookingFormProps {
     | { ok: true; appointmentId?: string }
     | { ok: false; error: string }
   >;
-
-  businessHours?: BusinessHours;
 
   extraDisabledDays?: Date[];
 
@@ -92,7 +81,6 @@ export default function BookingFormUI({
   loadTimeSlots,
   loadDisabledDays,
   onSubmit,
-  businessHours = { start: "09:00", end: "17:00", intervalMinutes: 30 },
   extraDisabledDays = [],
   initialName = "",
   initialEmail = "",
@@ -177,30 +165,6 @@ export default function BookingFormUI({
     return Object.keys(e).length === 0;
   };
 
-  const parseHHMM = (hhmm: string) => {
-    const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
-    return { h, m };
-  };
-
-  const defaultGenerateSlotsLocal = (d: Date) => {
-    const { h: sh, m: sm } = parseHHMM(businessHours.start);
-    const { h: eh, m: em } = parseHHMM(businessHours.end);
-    const start = new Date(d);
-    start.setHours(sh, sm, 0, 0);
-    const end = new Date(d);
-    end.setHours(eh, em, 0, 0);
-
-    const out: string[] = [];
-    for (let t = start; t < end; t = addMinutes(t, businessHours.intervalMinutes)) {
-      out.push(
-        `${String(t.getHours()).padStart(2, "0")}:${String(
-          t.getMinutes()
-        ).padStart(2, "0")}`
-      );
-    }
-    return out;
-  };
-
   const smoothScrollTo = (id: string) => {
     if (typeof window === "undefined") return;
     const el = document.getElementById(id);
@@ -260,9 +224,9 @@ export default function BookingFormUI({
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to load availability");
       return (json?.slots ?? []) as string[];
-    } catch {
-      // soft-fallback to local grid
-      return defaultGenerateSlotsLocal(args.date);
+    } catch (err) {
+      console.debug("[BookingFormUI] loadTimeSlots failed:", err);
+      return [];
     }
   }
 
@@ -292,13 +256,35 @@ export default function BookingFormUI({
       return (json?.disabledDays ?? []).map(
         (s: string) => new Date(`${s}T00:00:00Z`)
       );
-    } catch {
+    } catch (err) {
+      console.debug("[BookingFormUI] loadDisabledDays failed:", err);
       return extraDisabledDays;
     }
   }
 
   const effectiveLoadTimeSlots = loadTimeSlots ?? defaultLoadTimeSlots;
   const effectiveLoadDisabledDays = loadDisabledDays ?? defaultLoadDisabledDays;
+
+  // helper: refresh current date's slots from server
+  const refreshDaySlots = async (d: Date) => {
+    try {
+      setTimesLoading(true);
+      const slots = await effectiveLoadTimeSlots({
+        date: d,
+        timezone,
+        botId: resolvedBotId,
+        conversationId: resolvedConversationId,
+      });
+      setTimeSlots(slots);
+      setFormData((p) => (p.time && !slots.includes(p.time) ? { ...p, time: "" } : p));
+    } catch (err) {
+      console.debug("[BookingFormUI] refreshDaySlots failed:", err);
+      setTimeSlots([]);
+      setFormData((p) => ({ ...p, time: "" }));
+    } finally {
+      setTimesLoading(false);
+    }
+  };
 
   /* ---------- month-level disabled days ---------- */
   useEffect(() => {
@@ -317,7 +303,6 @@ export default function BookingFormUI({
     (async () => {
       try {
         setDisabledLoading(true);
-        // If no dynamic provider and no extras, skip
         if (!effectiveLoadDisabledDays && extraDisabledDays.length === 0) return;
         const res = effectiveLoadDisabledDays
           ? await effectiveLoadDisabledDays({
@@ -329,7 +314,6 @@ export default function BookingFormUI({
           : extraDisabledDays;
         if (!cancelled) setDisabledDays([...extraDisabledDays, ...(res ?? [])]);
       } catch (err) {
-        // keep current disabledDays on failure; log for debugging to satisfy no-empty
         console.debug("[BookingFormUI] loadDisabledDays failed:", err);
       } finally {
         if (!cancelled) setDisabledLoading(false);
@@ -362,7 +346,8 @@ export default function BookingFormUI({
             setFormData((p) => ({ ...p, time: "" }));
           }
         }
-      } catch {
+      } catch (err) {
+        console.debug("[BookingFormUI] loadTimeSlots failed:", err);
         if (!cancelled) {
           setTimeSlots([]);
           setFormData((p) => ({ ...p, time: "" }));
@@ -491,6 +476,11 @@ export default function BookingFormUI({
       const res = await effectiveSubmit(payload);
       if (!res.ok) throw new Error(res.error || "Unknown error");
 
+      // Immediately refresh the same day's server slots so the just-booked time disappears
+      if (formData.date) {
+        await refreshDaySlots(formData.date);
+      }
+
       if (typeof window !== "undefined") {
         window.parent?.postMessage(
           {
@@ -509,7 +499,7 @@ export default function BookingFormUI({
     }
   };
 
-  // NEW: email-only cancel submitter
+  // Email-only cancel submitter
   async function defaultCancelSubmitter(args: {
     email: string;
   }): Promise<{ ok: true; message?: string } | { ok: false; error: string }> {
@@ -551,6 +541,11 @@ export default function BookingFormUI({
       setCancelLoading(true);
       const res = await defaultCancelSubmitter({ email: cancelEmail });
       if (!res.ok) throw new Error(res.error);
+
+      // After cancel, refresh slots for the selected day (if any) to show the freed time
+      if (formData.date) {
+        await refreshDaySlots(formData.date);
+      }
 
       if (typeof window !== "undefined") {
         window.parent?.postMessage({ type: "booking:canceled" }, "*");
@@ -754,12 +749,11 @@ export default function BookingFormUI({
             <div className="flex justify-center overflow-x-hidden">
               <DayPicker
                 mode="single"
-                numberOfMonths={1} // keep it narrow for iframes
+                numberOfMonths={1}
                 selected={formData.date || undefined}
                 onSelect={handleSelectDate}
                 onMonthChange={setVisibleMonth}
                 disabled={[{ before: startOfDay(new Date()) }, ...disabledDays]}
-                // compact calendar when embedded
                 style={
                   resolvedIsEmbedded
                     ? ({
