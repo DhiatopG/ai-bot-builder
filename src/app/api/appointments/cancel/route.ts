@@ -2,24 +2,30 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Run on Node (Buffer, fetch, etc.)
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // === ENV ===
-// Required
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Optional but strongly recommended for token refresh (Google)
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+// Optional (Google token refresh)
+const GOOGLE_CLIENT_ID =
+  process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 function admin() {
-  return createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  return createClient(SUPABASE_URL, SERVICE_ROLE, {
+    auth: { persistSession: false },
+  });
 }
 
 type BodyIn = {
-  botId?: string;        // prefer this
-  bot_id?: string;       // allow snake_case
-  userId?: string;       // direct user cancel (fallback path)
-  eventId: string;       // accepts either internal appointments.event_id OR external_event_id
+  botId?: string; // prefer this
+  bot_id?: string; // allow snake_case
+  userId?: string; // optional: direct user cancel
+  eventId: string; // accepts appointments.event_id OR external_event_id
 };
 
 type IntegrationRow = {
@@ -28,35 +34,32 @@ type IntegrationRow = {
   provider: "google" | "microsoft" | string;
   access_token: string | null;
   refresh_token: string | null;
-  expires_at?: number | null;     // seconds since epoch (common)
-  expiry_date?: string | null;    // ISO string (some schemas)
-  calendar_id?: string | null;    // e.g. 'primary' or concrete calendar id
+  expires_at?: number | null; // epoch seconds (present in your schema)
+  calendar_id?: string | null; // e.g. 'primary' or concrete id
   connected_at?: string | null;
 };
-
-// --- helpers ---------------------------------------------------------
 
 function nowEpochSeconds() {
   return Math.floor(Date.now() / 1000);
 }
 
 function extractExpirySeconds(row: IntegrationRow): number | null {
-  if (typeof row.expires_at === "number" && !Number.isNaN(row.expires_at)) return row.expires_at;
-  if (row.expiry_date) {
-    const t = Math.floor(new Date(row.expiry_date).getTime() / 1000);
-    if (t > 0) return t;
-  }
-  return null;
+  return typeof row.expires_at === "number" && !Number.isNaN(row.expires_at)
+    ? row.expires_at
+    : null;
 }
 
 function isExpiredSoon(row: IntegrationRow, skewSeconds = 60): boolean {
   const exp = extractExpirySeconds(row);
   if (!exp) return false;
-  return exp <= (nowEpochSeconds() + skewSeconds);
+  return exp <= nowEpochSeconds() + skewSeconds;
 }
 
 /** Decode Google Calendar htmlLink ?eid= (base64url of "eventId calendarId") */
-function decodeFromHtmlLink(htmlLink?: string | null): { eventId?: string; calendarId?: string } {
+function decodeFromHtmlLink(htmlLink?: string | null): {
+  eventId?: string;
+  calendarId?: string;
+} {
   if (!htmlLink) return {};
   const m = htmlLink.match(/[?&]eid=([^&]+)/);
   if (!m) return {};
@@ -76,7 +79,8 @@ async function refreshGoogleToken(
   sb: ReturnType<typeof admin>,
   ic: IntegrationRow
 ): Promise<{ accessToken: string; expiresAt?: number } | null> {
-  if (!ic.refresh_token || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return null;
+  if (!ic.refresh_token || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET)
+    return null;
 
   const form = new URLSearchParams();
   form.set("client_id", GOOGLE_CLIENT_ID);
@@ -92,19 +96,20 @@ async function refreshGoogleToken(
 
   if (!res.ok) return null;
 
-  const j = await res.json().catch(() => ({} as any));
+  const j = (await res.json().catch(() => ({}))) as any;
   const newAccess = j.access_token as string | undefined;
-  const expiresIn = typeof j.expires_in === "number" ? j.expires_in : undefined;
+  const expiresIn =
+    typeof j.expires_in === "number" ? (j.expires_in as number) : undefined;
   if (!newAccess) return null;
 
   const newExpiresAt = expiresIn ? nowEpochSeconds() + expiresIn : undefined;
 
+  // NOTE: your schema has expires_at (epoch). No expiry_date column.
   await sb
     .from("integrations_calendar")
     .update({
       access_token: newAccess,
       expires_at: newExpiresAt ?? null,
-      expiry_date: newExpiresAt ? new Date(newExpiresAt * 1000).toISOString() : null,
       connected_at: new Date().toISOString(),
     })
     .eq("id", ic.id);
@@ -113,9 +118,9 @@ async function refreshGoogleToken(
 }
 
 // ---- Provider calls -------------------------------------------------
-type GoogleDeleteOK    = { kind: "ok" };
+type GoogleDeleteOK = { kind: "ok" };
 type GoogleDeleteRetry = { kind: "retry"; status: number };
-type GoogleDeleteErr   = { kind: "error"; status: number; details: any };
+type GoogleDeleteErr = { kind: "error"; status: number; details: any };
 type GoogleDeleteResult = GoogleDeleteOK | GoogleDeleteRetry | GoogleDeleteErr;
 
 async function googleDeleteEvent(
@@ -123,9 +128,9 @@ async function googleDeleteEvent(
   eventId: string,
   accessToken: string
 ): Promise<GoogleDeleteResult> {
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(
-    eventId
-  )}?sendUpdates=all`;
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+    calendarId
+  )}/events/${encodeURIComponent(eventId)}?sendUpdates=all`;
 
   const res = await fetch(url, {
     method: "DELETE",
@@ -144,7 +149,7 @@ async function googleDeleteEvent(
   return { kind: "error", status: res.status, details };
 }
 
-type MsDeleteOK  = { kind: "ok" };
+type MsDeleteOK = { kind: "ok" };
 type MsDeleteErr = { kind: "error"; status: number; details: any };
 type MsDeleteResult = MsDeleteOK | MsDeleteErr;
 
@@ -152,10 +157,13 @@ async function microsoftDeleteEvent(
   eventId: string,
   accessToken: string
 ): Promise<MsDeleteResult> {
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
 
   // 204 success; 404 treat as already gone (ok)
   if (res.ok || res.status === 404) return { kind: "ok" };
@@ -181,16 +189,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "eventId required" }, { status: 400 });
     }
     if (!botId && !userIdDirect) {
-      return NextResponse.json({ error: "botId or userId required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "botId or userId required" },
+        { status: 400 }
+      );
     }
 
     const sb = admin();
 
-    // 0) Resolve the appointment row FIRST (accept internal or external id)
-    // Prefer scoping by bot when provided.
+    // 0) Resolve appointment (accept internal or external ids)
     const apptQuery = sb
       .from("appointments")
-      .select("id, bot_id, provider, external_event_id, external_calendar_id, metadata")
+      .select(
+        "id, bot_id, provider, status, event_id, external_event_id, external_calendar_id, metadata"
+      )
       .or(`external_event_id.eq.${rawEventId},event_id.eq.${rawEventId}`)
       .limit(1);
 
@@ -198,18 +210,46 @@ export async function POST(req: Request) {
       ? await apptQuery.eq("bot_id", botId).maybeSingle()
       : await apptQuery.maybeSingle();
 
-    const appt = apptScoped;
+    const appt = apptScoped as
+      | {
+          id: string;
+          bot_id: string;
+          provider: string | null;
+          status: string;
+          event_id: string | null;
+          external_event_id: string | null;
+          external_calendar_id: string | null;
+          metadata?: any;
+        }
+      | null;
+
     if (apptScopedErr || !appt) {
-      return NextResponse.json({ error: "Appointment not found for given eventId/botId" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Appointment not found for given eventId/botId" },
+        { status: 404 }
+      );
     }
 
-    // Derive Google IDs from row (or decode from htmlLink fallback)
-    // metadata may be null; TypeScript: treat as any.
-    const htmlLink: string | undefined = (appt as any)?.metadata?.htmlLink;
+    // Idempotent: already cancelled
+    if (appt.status === "cancelled") {
+      return NextResponse.json({
+        ok: true,
+        mode: "already_cancelled",
+        appointmentId: appt.id,
+        event_id: appt.external_event_id ?? appt.event_id ?? rawEventId,
+      });
+    }
+
+    // Decode possible Google ids from htmlLink (fallback)
+    const htmlLink: string | undefined = appt?.metadata?.htmlLink;
     const decoded = decodeFromHtmlLink(htmlLink);
 
-    let gEventId = appt.external_event_id || decoded.eventId;
-    let calendarIdFromRow = appt.external_calendar_id || decoded.calendarId;
+    // Normalize provider from appointment
+    const providerNorm = (appt.provider || "").toLowerCase();
+    const isGoogle =
+      providerNorm === "google" || providerNorm === "google_calendar";
+    const isMicrosoft =
+      providerNorm === "microsoft" || providerNorm === "microsoft_calendar";
 
     // 1) Resolve owner user id (from bot if needed)
     let ownerUserId = userIdDirect;
@@ -217,7 +257,7 @@ export async function POST(req: Request) {
       const { data: botRow, error: botErr } = await sb
         .from("bots")
         .select("user_id")
-        .eq("id", botId)
+        .eq("id", appt.bot_id)
         .single();
       if (botErr || !botRow) {
         return NextResponse.json({ error: "Bot not found" }, { status: 404 });
@@ -225,7 +265,7 @@ export async function POST(req: Request) {
       ownerUserId = botRow.user_id as string;
     }
 
-    // 2) Load calendar integration rows for owner. Prefer Google.
+    // 2) Load calendar integrations for owner; select by appointment’s provider
     const { data: icRows, error: icErr } = await sb
       .from("integrations_calendar")
       .select("*")
@@ -234,69 +274,119 @@ export async function POST(req: Request) {
       .order("connected_at", { ascending: false });
 
     if (icErr || !icRows?.length) {
-      return NextResponse.json({ error: "No calendar connection for user" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No calendar connection for user" },
+        { status: 400 }
+      );
     }
 
-    const preferred =
-      icRows.find((r: IntegrationRow) => r.provider === "google" && r.access_token) ??
-      (icRows[0] as IntegrationRow);
+    const integrations = icRows as IntegrationRow[];
+    const pick = (prov: "google" | "microsoft") =>
+      integrations.find(
+        (r) => r.provider === prov && r.access_token
+      ) as IntegrationRow | undefined;
 
-    if (!preferred?.access_token) {
-      return NextResponse.json({ error: "No access_token for calendar" }, { status: 400 });
+    const chosen =
+      (isGoogle && pick("google")) ||
+      (isMicrosoft && pick("microsoft")) ||
+      integrations.find((r) => r.access_token) ||
+      null;
+
+    if (!chosen?.access_token) {
+      return NextResponse.json(
+        { error: "No access_token for calendar" },
+        { status: 400 }
+      );
     }
 
-    const provider = preferred.provider;
+    // Build final event/calendar identifiers
+    const externalEventId =
+      appt.external_event_id || decoded.eventId || appt.event_id || rawEventId;
 
-    // Final calendarId to call provider with:
-    // Prefer the PER-EVENT calendar from the appointment row; fallback to decoded htmlLink; last resort integration calendar_id or 'primary'.
+    const looksValidCal = (cid?: string | null) =>
+      !!cid && cid.length >= 8 && cid.includes("@");
+
     let calendarId =
-      (calendarIdFromRow && calendarIdFromRow.trim()) ||
-      (preferred.calendar_id?.trim() || "primary");
+      (looksValidCal(appt.external_calendar_id)
+        ? appt.external_calendar_id!
+        : null) ||
+      (looksValidCal(chosen.calendar_id) ? chosen.calendar_id! : null) ||
+      "primary";
 
-    // 3) Provider-specific delete (Google with refresh; Microsoft basic)
-    if (provider === "google") {
-      if (!gEventId) {
-        return NextResponse.json({ error: "Missing external_event_id for Google cancel" }, { status: 400 });
+    // 3) Provider delete
+    if (chosen.provider === "google") {
+      if (!externalEventId) {
+        return NextResponse.json(
+          { error: "Missing external_event_id for Google cancel" },
+          { status: 400 }
+        );
       }
 
-      let accessToken = preferred.access_token;
+      let accessToken = chosen.access_token!;
 
-      // If token near expiry and we can refresh, do so
-      if (isExpiredSoon(preferred) && preferred.refresh_token && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
-        const refreshed = await refreshGoogleToken(sb, preferred);
+      // Refresh if near expiry
+      if (
+        isExpiredSoon(chosen) &&
+        chosen.refresh_token &&
+        GOOGLE_CLIENT_ID &&
+        GOOGLE_CLIENT_SECRET
+      ) {
+        const refreshed = await refreshGoogleToken(sb, chosen);
+        if (refreshed?.accessToken) accessToken = refreshed.accessToken;
+      }
+
+      // Attempt 1: current calendarId
+      let del = await googleDeleteEvent(calendarId, externalEventId, accessToken);
+
+      // If unauthorized, try one refresh then retry
+      if (
+        del.kind === "retry" &&
+        chosen.refresh_token &&
+        GOOGLE_CLIENT_ID &&
+        GOOGLE_CLIENT_SECRET
+      ) {
+        const refreshed = await refreshGoogleToken(sb, chosen);
         if (refreshed?.accessToken) {
-          accessToken = refreshed.accessToken;
+          del = await googleDeleteEvent(
+            calendarId,
+            externalEventId,
+            refreshed.accessToken
+          );
         }
       }
 
-      // Try delete using the (row) calendar & event
-      let del = await googleDeleteEvent(calendarId, gEventId, accessToken);
-
-      // If unauthorized, try refresh once then retry delete
-      if (del.kind === "retry" && preferred.refresh_token && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
-        const refreshed = await refreshGoogleToken(sb, preferred);
-        if (refreshed?.accessToken) {
-          del = await googleDeleteEvent(calendarId, gEventId, refreshed.accessToken);
+      // If not found, try 'primary' as a small fallback
+      if (del.kind === "error") {
+        const reason =
+          (del.details?.error?.errors?.[0]?.reason as string | undefined) ||
+          "";
+        if (reason === "notFound" && calendarId !== "primary") {
+          const second = await googleDeleteEvent(
+            "primary",
+            externalEventId,
+            accessToken
+          );
+          if (second.kind === "ok") {
+            calendarId = "primary";
+            del = second;
+          }
         }
       }
 
       if (del.kind !== "ok") {
-        // Not ok and not handled
         const status = del.kind === "error" ? del.status : 401;
         const details = del.kind === "error" ? del.details : null;
         return NextResponse.json(
           {
             error: "Google delete failed",
             details,
-            // Helpful debug (safe): shows which calendar/event we tried
-            attempted: { calendarId, eventId: gEventId },
+            attempted: { calendarId, eventId: externalEventId },
           },
           { status }
         );
       }
-    } else if (provider === "microsoft") {
-      const extId = gEventId || rawEventId; // MS path typically sends external id
-      const del = await microsoftDeleteEvent(extId, preferred.access_token!);
+    } else if (chosen.provider === "microsoft") {
+      const del = await microsoftDeleteEvent(externalEventId, chosen.access_token!);
       if (del.kind !== "ok") {
         return NextResponse.json(
           { error: "Microsoft delete failed", details: del.details },
@@ -304,22 +394,40 @@ export async function POST(req: Request) {
         );
       }
     } else {
-      return NextResponse.json({ error: `Unsupported provider: ${provider}` }, { status: 400 });
+      return NextResponse.json(
+        { error: `Unsupported provider: ${chosen.provider}` },
+        { status: 400 }
+      );
     }
 
-    // 4) Mark THIS appointment row as cancelled (use id for safety)
+    // 4) Mark this appointment cancelled (idempotent)
     const updated_at = new Date().toISOString();
     const { error: updErr } = await admin()
       .from("appointments")
-      .update({ status: "cancelled", updated_at })
+      .update({
+        status: "cancelled",
+        external_calendar_id: calendarId, // self-heal the correct calendar
+        updated_at,
+      })
       .eq("id", appt.id);
 
     if (updErr) {
-      // provider delete succeeded but DB update failed — still return ok to keep idempotency
-      return NextResponse.json({ ok: true, event_id: gEventId ?? rawEventId, dbUpdate: "failed" });
+      // Provider delete succeeded but DB update failed — still OK
+      return NextResponse.json({
+        ok: true,
+        event_id: externalEventId,
+        dbUpdate: "failed",
+      });
     }
 
-    return NextResponse.json({ ok: true, event_id: gEventId ?? rawEventId });
+    return NextResponse.json({
+      ok: true,
+      provider: chosen.provider,
+      appointmentId: appt.id,
+      event_id: externalEventId,
+      calendarId,
+      mode: "provider",
+    });
   } catch (e: any) {
     return NextResponse.json(
       { error: "Unhandled error", details: String(e?.message ?? e) },
