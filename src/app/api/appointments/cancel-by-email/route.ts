@@ -5,6 +5,8 @@ import { ratelimit } from "@/lib/rateLimiter";
 
 // Force Node runtime (service role key is not safe on edge)
 export const runtime = "nodejs";
+// Prevent caching in Vercel/Next
+export const dynamic = "force-dynamic";
 
 // --- ENV (must exist) ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -49,6 +51,8 @@ function withCors(res: NextResponse, req: Request) {
   res.headers.set("Vary", "Origin");
   res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type");
+  // QoL: cache preflight 24h (safe if your allowlist is stable)
+  res.headers.set("Access-Control-Max-Age", "86400");
   return res;
 }
 
@@ -88,7 +92,7 @@ export async function POST(req: Request) {
 
   // ---- Upstash Rate Limit (keyed by botId + client IP) ----
   const rlKey = `${botId}:${ip}`;
-  try { // NEW
+  try {
     const { success, limit, remaining, reset } = await ratelimit.limit(rlKey);
     if (!success) {
       const res = NextResponse.json(
@@ -104,7 +108,9 @@ export async function POST(req: Request) {
       );
       return withCors(res, req);
     }
-  } catch { /* NEW: bypass limiter if misconfigured */ }
+  } catch {
+    // bypass limiter if misconfigured
+  }
 
   // ---- main logic ----
   try {
@@ -218,7 +224,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2) Call the core cancel route (includes provider)  // NEW
+    // 2) Call the core cancel route (includes provider)
     if (row.external_event_id) {
       const base = buildAppBase(req);
       const cancelRes = await fetch(`${base}/api/appointments/cancel`, {
@@ -227,7 +233,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           botId,
           eventId: row.external_event_id,
-          provider: row.provider ?? "google", // NEW: pass provider through
+          provider: row.provider ?? "google",
         }),
       });
 
