@@ -65,8 +65,7 @@ export async function OPTIONS(req: Request) {
 }
 
 export async function POST(req: Request) {
-  // ---- Upstash Rate Limit (keyed by botId + client IP) ----
-  // We need botId to build the key; parse it minimally from body without fully consuming stream twice.
+  // ---- parse body (needed for rate-limit key) ----
   let parsed: BodyIn | null = null;
   try {
     parsed = (await req.json()) as BodyIn;
@@ -87,24 +86,27 @@ export async function POST(req: Request) {
     return withCors(res, req);
   }
 
+  // ---- Upstash Rate Limit (keyed by botId + client IP) ----
   const rlKey = `${botId}:${ip}`;
-  const { success, limit, remaining, reset } = await ratelimit.limit(rlKey);
-  if (!success) {
-    const res = NextResponse.json(
-      { ok: false, error: "rate_limited" },
-      {
-        status: 429,
-        headers: {
-          "X-RateLimit-Limit": String(limit),
-          "X-RateLimit-Remaining": String(remaining),
-          "X-RateLimit-Reset": String(reset),
-        },
-      }
-    );
-    return withCors(res, req);
-  }
+  try { // NEW
+    const { success, limit, remaining, reset } = await ratelimit.limit(rlKey);
+    if (!success) {
+      const res = NextResponse.json(
+        { ok: false, error: "rate_limited" },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": String(limit),
+            "X-RateLimit-Remaining": String(remaining),
+            "X-RateLimit-Reset": String(reset),
+          },
+        }
+      );
+      return withCors(res, req);
+    }
+  } catch { /* NEW: bypass limiter if misconfigured */ }
 
-  // ---- main logic (now that we're allowed) ----
+  // ---- main logic ----
   try {
     const email = normEmail(parsed.email);
     const appointmentId = (parsed.appointmentId || "").trim();
@@ -118,7 +120,7 @@ export async function POST(req: Request) {
     const sb = admin();
 
     // 1) Choose target appointment
-    //    Priority: appointmentId → startsAt → soonest upcoming confirmed
+    // Priority: appointmentId → startsAt → soonest upcoming confirmed
     let row:
       | {
           id: string;
@@ -197,7 +199,7 @@ export async function POST(req: Request) {
         .eq("bot_id", botId)
         .eq("status", "confirmed")
         .gte("starts_at", new Date().toISOString())
-        .ilike("invitee_email", email) // case-insensitive exact match
+        .ilike("invitee_email", email)
         .order("starts_at", { ascending: true })
         .limit(1)
         .maybeSingle();
@@ -216,23 +218,26 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2) If we have a calendar event id, call the existing cancel endpoint (handles Google/Outlook + DB)
+    // 2) Call the core cancel route (includes provider)  // NEW
     if (row.external_event_id) {
       const base = buildAppBase(req);
       const cancelRes = await fetch(`${base}/api/appointments/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ botId, eventId: row.external_event_id }),
+        body: JSON.stringify({
+          botId,
+          eventId: row.external_event_id,
+          provider: row.provider ?? "google", // NEW: pass provider through
+        }),
       });
 
       if (!cancelRes.ok) {
         let details: any = null;
-try {
-  details = await cancelRes.json();
-} catch (err) {
-  // Keep response useful without breaking lint rules
-  details = { parseError: String((err as Error)?.message ?? err) };
-}
+        try {
+          details = await cancelRes.json();
+        } catch (err) {
+          details = { parseError: String((err as Error)?.message ?? err) };
+        }
         const res = NextResponse.json(
           { ok: false, error: "provider_cancel_failed", details },
           { status: cancelRes.status }
@@ -249,7 +254,7 @@ try {
       return withCors(res, req);
     }
 
-    // 3) Fallback: mark as cancelled in DB only (no external id to delete)
+    // 3) Fallback: DB-only cancel
     const { error: updErr } = await sb
       .from("appointments")
       .update({ status: "cancelled", updated_at: new Date().toISOString() })
