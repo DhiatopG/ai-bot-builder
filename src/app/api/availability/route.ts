@@ -2,251 +2,207 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 
+// ---- RUNTIME / CACHING ----
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// ---- TYPES ----
+type Busy = { start: string; end: string }; // ISO UTC strings
+type IncludedStatus = "pending" | "confirmed" | "rescheduled";
 type ApptRow = {
-  starts_at: string | null; // ISO
-  ends_at: string | null;   // ISO
-  status: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: IncludedStatus | string | null;
 };
 
-const DEFAULT_START = "09:00";
-const DEFAULT_END = "17:00";
+// ---- CONSTANTS ----
+const DEFAULT_TZ = "Africa/Tunis";
+const DEFAULT_DURATION_MIN = 30;
+const INCLUDED_STATUSES: IncludedStatus[] = ["pending", "confirmed", "rescheduled"];
 
-function clampDuration(v: string | null, fallback = 30) {
+// If your UI uses a fixed grid, keep 30m (or 15m). You can make this configurable via ?step=15
+const DEFAULT_STEP_MIN = 30; // step for generating grid if you rely on fallback
+const DEFAULT_OPEN = "09:00";  // fallback working hours if you don't have your own source
+const DEFAULT_CLOSE = "17:00"; // fallback working hours if you don't have your own source
+
+// QUICK bounds on allowed duration
+function clampDuration(v: string | null, fallback = DEFAULT_DURATION_MIN) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   const i = Math.round(n);
-  return Math.min(180, Math.max(5, i)); // 5–180
+  return Math.min(180, Math.max(5, i)); // 5–180 minutes
+}
+
+// ---- TIME HELPERS (TZ-light; assumes Africa/Tunis = UTC+01:00, no DST) ----
+function offsetMinutesForTZ(tz: string): number {
+  // Africa/Tunis is effectively UTC+01:00 (no DST)
+  if ((tz || "").toLowerCase() === "africa/tunis") return 60;
+  // Fallback: UTC
+  return 0;
 }
 
 function parseHHMM(hhmm: string) {
-  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
-  return { h: Number.isFinite(h) ? h : 9, m: Number.isFinite(m) ? m : 0 };
+  const [hh, mm] = hhmm.split(":").map((x) => parseInt(x, 10));
+  return { h: Number.isFinite(hh) ? hh : 0, m: Number.isFinite(mm) ? mm : 0 };
 }
 
-function atDateTime(dateStr: string, hhmm: string) {
-  const d = new Date(`${dateStr}T00:00:00Z`); // anchor in Z then set H/M
+// Build a UTC Date that corresponds to the given local wall time in the provided tz offset.
+// If tz = +60 minutes (Africa/Tunis), "2025-10-02 09:00" local → 08:00 UTC.
+function localToUTC(dateStr: string, hhmm: string, offsetMin: number): Date {
+  const [y, mo, d] = dateStr.split("-").map(Number);
   const { h, m } = parseHHMM(hhmm);
-  d.setUTCHours(h, m, 0, 0);
-  return d;
+  const asUTC = Date.UTC(y, (mo || 1) - 1, d || 1, h, m, 0, 0);
+  const utcMs = asUTC - offsetMin * 60_000; // subtract local offset to reach UTC
+  const dUtc = new Date(utcMs);
+  dUtc.setSeconds(0, 0);
+  return dUtc;
 }
 
-function addMinutes(d: Date, mins: number) {
-  return new Date(d.getTime() + mins * 60000);
+function toISO(d: Date) {
+  const x = new Date(d);
+  x.setSeconds(0, 0);
+  return x.toISOString();
 }
 
-function fmtHHMM(d: Date) {
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(
-    d.getUTCMinutes()
-  ).padStart(2, "0")}`;
+function halfOpenOverlap(a1: Date, a2: Date, b1: Date, b2: Date) {
+  // [start, end)
+  return a1 < b2 && b1 < a2;
 }
 
-function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
-  return aStart < bEnd && bStart < aEnd;
+// ---- MERGE RANGES ----
+function mergeBusy(busy: Busy[]): Busy[] {
+  if (!busy.length) return [];
+  const sorted = [...busy].sort((a, b) => a.start.localeCompare(b.start));
+  const out: Busy[] = [];
+  for (const r of sorted) {
+    const last = out[out.length - 1];
+    if (!last) {
+      out.push({ ...r });
+      continue;
+    }
+    const lastEnd = new Date(last.end).getTime();
+    const curStart = new Date(r.start).getTime();
+    const curEnd = new Date(r.end).getTime();
+    if (curStart <= lastEnd) {
+      if (curEnd > lastEnd) last.end = r.end;
+    } else {
+      out.push({ ...r });
+    }
+  }
+  return out;
 }
 
-function ymd(d: Date) {
-  // format YYYY-MM-DD in UTC
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// ---- SIMPLE SLOT GENERATOR (used only if you don't already have your own) ----
+function generateSlotsHHMM(openHHMM: string, closeHHMM: string, stepMin: number): string[] {
+  const { h: oh, m: om } = parseHHMM(openHHMM);
+  const { h: ch, m: cm } = parseHHMM(closeHHMM);
+  const startMin = oh * 60 + om;
+  const endMin = ch * 60 + cm;
+
+  if (endMin <= startMin) return []; // invalid window
+  const out: string[] = [];
+  for (let t = startMin; t + stepMin <= endMin; t += stepMin) {
+    const hh = Math.floor(t / 60);
+    const mm = t % 60;
+    out.push(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`);
+  }
+  return out;
 }
 
+// ---- ROUTE ----
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const botId = url.searchParams.get("botId") || "";
-    const scope = (url.searchParams.get("scope") || "").toLowerCase();
+    const dateStr = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
+    const tz = url.searchParams.get("tz") || DEFAULT_TZ;
+    const durationMin = clampDuration(url.searchParams.get("duration"), DEFAULT_DURATION_MIN);
+    const stepMin = clampDuration(url.searchParams.get("step"), DEFAULT_STEP_MIN);
+    const debug = url.searchParams.get("debug") === "1";
 
     if (!botId) {
-      return NextResponse.json(
-        { error: "Missing botId" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "botId required" }, { status: 400 });
     }
 
+    // ---- SLOT SOURCE (KEEP YOUR CURRENT LOGIC IF YOU HAVE IT) ----
+    // If you already create ["HH:MM", ...] elsewhere (e.g., reading bot hours),
+    // just replace the next line with that function call.
+    const slotsHHMM: string[] = generateSlotsHHMM(DEFAULT_OPEN, DEFAULT_CLOSE, stepMin);
+
+    // ---- DAY WINDOW IN LOCAL, COMPARE IN UTC ----
+    const offsetMin = offsetMinutesForTZ(tz);
+    // local midnight → UTC
+    const dayStartUTC = localToUTC(dateStr, "00:00", offsetMin);
+    // local end (exclusive) → UTC ; use 24:00 as end
+    const dayEndUTC = localToUTC(dateStr, "24:00", offsetMin);
+    const dayStartISO = toISO(dayStartUTC);
+    const dayEndISO = toISO(dayEndUTC);
+
+    // ---- LOAD DB BUSY WINDOWS ----
+    // FIX #1: await the client (your wrapper returns a Promise)
     const supabase = await createServerClient();
 
-    // ----- Dynamic timezone resolution (no hardcoding) -----
-    let tz =
-      url.searchParams.get("timezone") ||
-      url.searchParams.get("tz") ||
-      undefined;
-
-    if (!tz) {
-      const { data: botRow } = await supabase
-        .from("bots")
-        .select("default_timezone")
-        .eq("id", botId)
-        .maybeSingle();
-      tz = botRow?.default_timezone || "UTC";
-    }
-    // -------------------------------------------------------
-
-    // =========================
-    // MODE A: Month grid (scope=days)
-    // =========================
-    if (scope === "days") {
-      const monthStart = url.searchParams.get("monthStart"); // YYYY-MM-DD
-      const monthEnd   = url.searchParams.get("monthEnd");   // YYYY-MM-DD
-      const duration   = clampDuration(url.searchParams.get("duration"), 30);
-
-      if (!monthStart || !monthEnd || !tz) {
-        return NextResponse.json(
-          { error: "Missing botId, monthStart, monthEnd, or timezone/tz" },
-          { status: 400 }
-        );
-      }
-
-      // Pull all appointments in the month window
-      const isoStart = new Date(`${monthStart}T00:00:00.000Z`).toISOString();
-      const isoEnd   = new Date(`${monthEnd}T23:59:59.999Z`).toISOString();
-
-      const { data: appts, error } = await supabase
-        .from("appointments")
-        .select("starts_at, ends_at, status")
-        .eq("bot_id", botId)
-        // include 'pending' so newly created holds block immediately
-        .in("status", ["pending", "confirmed", "rescheduled"])
-        .gte("starts_at", isoStart)
-        .lte("starts_at", isoEnd);
-
-      if (error) {
-        console.error("[availability days] DB error:", error.message);
-      }
-
-      // Build a map of busy windows per day
-      const busyByDay = new Map<string, Array<{ start: Date; end: Date }>>();
-      for (const a of appts ?? []) {
-        if (!a.starts_at || !a.ends_at) continue;
-        const s = new Date(a.starts_at);
-        const e = new Date(a.ends_at);
-        const dayKey = ymd(s);
-        const list = busyByDay.get(dayKey) ?? [];
-        list.push({ start: s, end: e });
-        busyByDay.set(dayKey, list);
-      }
-
-      // Walk each day in [monthStart, monthEnd] and see if at least one slot is free
-      const days: string[] = [];
-      let p = new Date(`${monthStart}T00:00:00Z`);
-      const endGuard = new Date(`${monthEnd}T00:00:00Z`);
-
-      while (p <= endGuard) {
-        const dayKey = ymd(p);
-
-        // Generate raw slots for this day
-        const dayStart = atDateTime(dayKey, DEFAULT_START);
-        const dayEnd   = atDateTime(dayKey, DEFAULT_END);
-
-        let hasFree = false;
-        const busy = busyByDay.get(dayKey) ?? [];
-
-        // Walk slots until we find at least one not overlapping
-        for (let t = new Date(dayStart); t < dayEnd; t = addMinutes(t, duration)) {
-          const start = new Date(t);
-          const end = addMinutes(start, duration);
-          if (end > dayEnd) break;
-
-          let collides = false;
-          for (const w of busy) {
-            if (overlaps(start, end, w.start, w.end)) {
-              collides = true;
-              break;
-            }
-          }
-          if (!collides) {
-            hasFree = true;
-            break;
-          }
-        }
-
-        if (hasFree) days.push(dayKey);
-        // next day
-        p = addMinutes(p, 24 * 60);
-      }
-
-      return NextResponse.json({
-        bot_id: botId,
-        timezone: tz,
-        month_start: monthStart,
-        month_end: monthEnd,
-        available_days: days, // e.g. ["2025-09-01","2025-09-02",...]
-      });
-    }
-
-    // =========================
-    // MODE B: Single day (default)
-    // =========================
-    const date = url.searchParams.get("date") || ""; // YYYY-MM-DD
-    const duration = clampDuration(url.searchParams.get("duration"), 30);
-
-    if (!date) {
-      return NextResponse.json(
-        { error: "Missing botId or date (YYYY-MM-DD)" },
-        { status: 400 }
-      );
-    }
-
-    // Generate raw slots from default business hours (replace with per-bot hours later)
-    const dayStart = atDateTime(date, DEFAULT_START);
-    const dayEnd = atDateTime(date, DEFAULT_END);
-
-    const rawSlots: Array<{ start: Date; end: Date; label: string }> = [];
-    for (let t = new Date(dayStart); t < dayEnd; t = addMinutes(t, duration)) {
-      const start = new Date(t);
-      const end = addMinutes(start, duration);
-      if (end > dayEnd) break;
-      rawSlots.push({ start, end, label: fmtHHMM(start) });
-    }
-
-    // Fetch existing appointments for that bot on this date and remove overlaps
-    const isoDayStart = new Date(date + "T00:00:00.000Z").toISOString();
-    const isoDayEnd = new Date(date + "T23:59:59.999Z").toISOString();
-
-    const { data: appts, error } = await supabase
+    const { data: appts, error: dberr } = await supabase
       .from("appointments")
       .select("starts_at, ends_at, status")
       .eq("bot_id", botId)
-      // include 'pending' so the slot hides immediately after insert
-      .in("status", ["pending", "confirmed", "rescheduled"])
-      .gte("starts_at", isoDayStart)
-      .lte("starts_at", isoDayEnd);
+      .in("status", INCLUDED_STATUSES as string[])
+      // overlap with the day window (half-open)
+      .filter("starts_at", "lt", dayEndISO)
+      .filter("ends_at", "gt", dayStartISO);
 
-    if (error) {
-      console.error("[availability] DB error:", error.message);
+    if (dberr) {
+      return NextResponse.json(
+        { error: dberr.message },
+        { status: 500, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
-    const busyWindows = (appts ?? [])
-      .filter((a: ApptRow) => a.starts_at && a.ends_at)
-      .map((a: ApptRow) => ({
-        start: new Date(a.starts_at as string),
-        end: new Date(a.ends_at as string),
+    // FIX #2: add explicit param types to avoid implicit any
+    const dbBusyRaw: Busy[] = ((appts || []) as ApptRow[])
+      .filter((r: ApptRow) => !!r.starts_at && !!r.ends_at)
+      .map((r: ApptRow) => ({
+        start: toISO(new Date(r.starts_at as string)),
+        end: toISO(new Date(r.ends_at as string)),
       }));
 
-    const freeSlots = rawSlots.filter(({ start, end }) => {
-      for (const w of busyWindows) {
-        if (overlaps(start, end, w.start, w.end)) return false;
+    const dbBusy = mergeBusy(dbBusyRaw);
+
+    // ---- FILTER SLOTS AGAINST BUSY (HALF-OPEN) ----
+    const filtered = slotsHHMM.filter((hhmm: string) => {
+      const sUTC = localToUTC(dateStr, hhmm, offsetMin);
+      const eUTC = new Date(sUTC.getTime() + durationMin * 60_000);
+      for (const b of dbBusy) {
+        const bS = new Date(b.start);
+        const bE = new Date(b.end);
+        if (halfOpenOverlap(sUTC, eUTC, bS, bE)) return false;
       }
       return true;
     });
 
-    // (Future) subtract Google/Microsoft busy blocks here before returning
+    // ---- RESPONSE ----
+    const body: Record<string, any> = {
+      slots: filtered, // keep the simple ["HH:MM"] your UI expects
+    };
 
-    const slots = freeSlots.map((s) => s.label);
+    if (debug) {
+      body.included_statuses = INCLUDED_STATUSES;
+      body.db_busy = dbBusy;
+      body.day_window_local = { start: `${dateStr} 00:00`, end: `${dateStr} 24:00`, tz };
+      body.day_window_utc = { start: dayStartISO, end: dayEndISO };
+      body.duration_min = durationMin;
+      body.step_min = stepMin;
+    }
 
-    return NextResponse.json({
-      bot_id: botId,
-      date,
-      timezone: tz,
-      slot_duration_min: duration,
-      slots, // e.g. ["09:00","09:30",...]
+    return NextResponse.json(body, {
+      headers: {
+        "Cache-Control": "no-store",
+      },
     });
   } catch (e: any) {
-    console.error("[availability] fatal:", e?.message || e);
     return NextResponse.json(
-      { error: "Failed to compute availability" },
-      { status: 500 }
+      { error: e?.message ?? "Unexpected error" },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
