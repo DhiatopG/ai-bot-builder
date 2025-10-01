@@ -19,7 +19,7 @@ type BodyIn = {
   botId?: string;        // prefer this
   bot_id?: string;       // allow snake_case
   userId?: string;       // direct user cancel (fallback path)
-  eventId: string;       // Google/Microsoft event.id (you store as external_event_id)
+  eventId: string;       // accepts either internal appointments.event_id OR external_event_id
 };
 
 type IntegrationRow = {
@@ -55,11 +55,27 @@ function isExpiredSoon(row: IntegrationRow, skewSeconds = 60): boolean {
   return exp <= (nowEpochSeconds() + skewSeconds);
 }
 
+/** Decode Google Calendar htmlLink ?eid= (base64url of "eventId calendarId") */
+function decodeFromHtmlLink(htmlLink?: string | null): { eventId?: string; calendarId?: string } {
+  if (!htmlLink) return {};
+  const m = htmlLink.match(/[?&]eid=([^&]+)/);
+  if (!m) return {};
+  let b64 = m[1].replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (4 - (b64.length % 4)) % 4;
+  b64 += "=".repeat(pad);
+  try {
+    const decoded = Buffer.from(b64, "base64").toString("utf8");
+    const [eventId, calendarId] = decoded.split(" ");
+    return { eventId, calendarId };
+  } catch {
+    return {};
+  }
+}
+
 async function refreshGoogleToken(
   sb: ReturnType<typeof admin>,
   ic: IntegrationRow
 ): Promise<{ accessToken: string; expiresAt?: number } | null> {
-  // Need client credentials + refresh_token
   if (!ic.refresh_token || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return null;
 
   const form = new URLSearchParams();
@@ -83,7 +99,6 @@ async function refreshGoogleToken(
 
   const newExpiresAt = expiresIn ? nowEpochSeconds() + expiresIn : undefined;
 
-  // Persist back to integrations_calendar
   await sb
     .from("integrations_calendar")
     .update({
@@ -97,10 +112,10 @@ async function refreshGoogleToken(
   return { accessToken: newAccess, expiresAt: newExpiresAt };
 }
 
-// ---- Discriminated unions to keep TS happy -------------------------
-type GoogleDeleteOK   = { kind: "ok" };
+// ---- Provider calls -------------------------------------------------
+type GoogleDeleteOK    = { kind: "ok" };
 type GoogleDeleteRetry = { kind: "retry"; status: number };
-type GoogleDeleteErr  = { kind: "error"; status: number; details: any };
+type GoogleDeleteErr   = { kind: "error"; status: number; details: any };
 type GoogleDeleteResult = GoogleDeleteOK | GoogleDeleteRetry | GoogleDeleteErr;
 
 async function googleDeleteEvent(
@@ -160,9 +175,9 @@ export async function POST(req: Request) {
     const body = (await req.json()) as BodyIn;
     const botId = body.botId ?? body.bot_id ?? null;
     const userIdDirect = body.userId ?? null;
-    const eventId = (body.eventId || "").trim();
+    const rawEventId = (body.eventId || "").trim();
 
-    if (!eventId) {
+    if (!rawEventId) {
       return NextResponse.json({ error: "eventId required" }, { status: 400 });
     }
     if (!botId && !userIdDirect) {
@@ -170,6 +185,31 @@ export async function POST(req: Request) {
     }
 
     const sb = admin();
+
+    // 0) Resolve the appointment row FIRST (accept internal or external id)
+    // Prefer scoping by bot when provided.
+    const apptQuery = sb
+      .from("appointments")
+      .select("id, bot_id, provider, external_event_id, external_calendar_id, metadata")
+      .or(`external_event_id.eq.${rawEventId},event_id.eq.${rawEventId}`)
+      .limit(1);
+
+    const { data: apptScoped, error: apptScopedErr } = botId
+      ? await apptQuery.eq("bot_id", botId).maybeSingle()
+      : await apptQuery.maybeSingle();
+
+    const appt = apptScoped;
+    if (apptScopedErr || !appt) {
+      return NextResponse.json({ error: "Appointment not found for given eventId/botId" }, { status: 404 });
+    }
+
+    // Derive Google IDs from row (or decode from htmlLink fallback)
+    // metadata may be null; TypeScript: treat as any.
+    const htmlLink: string | undefined = (appt as any)?.metadata?.htmlLink;
+    const decoded = decodeFromHtmlLink(htmlLink);
+
+    let gEventId = appt.external_event_id || decoded.eventId;
+    let calendarIdFromRow = appt.external_calendar_id || decoded.calendarId;
 
     // 1) Resolve owner user id (from bot if needed)
     let ownerUserId = userIdDirect;
@@ -179,7 +219,6 @@ export async function POST(req: Request) {
         .select("user_id")
         .eq("id", botId)
         .single();
-
       if (botErr || !botRow) {
         return NextResponse.json({ error: "Bot not found" }, { status: 404 });
       }
@@ -207,13 +246,22 @@ export async function POST(req: Request) {
     }
 
     const provider = preferred.provider;
-    const calendarId = preferred.calendar_id?.trim() || "primary";
 
-    // 3) Provider-specific delete (Google w/ refresh; Microsoft basic)
+    // Final calendarId to call provider with:
+    // Prefer the PER-EVENT calendar from the appointment row; fallback to decoded htmlLink; last resort integration calendar_id or 'primary'.
+    let calendarId =
+      (calendarIdFromRow && calendarIdFromRow.trim()) ||
+      (preferred.calendar_id?.trim() || "primary");
+
+    // 3) Provider-specific delete (Google with refresh; Microsoft basic)
     if (provider === "google") {
+      if (!gEventId) {
+        return NextResponse.json({ error: "Missing external_event_id for Google cancel" }, { status: 400 });
+      }
+
       let accessToken = preferred.access_token;
 
-      // If token is near expiry and we have a refresh token + creds, proactively refresh
+      // If token near expiry and we can refresh, do so
       if (isExpiredSoon(preferred) && preferred.refresh_token && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         const refreshed = await refreshGoogleToken(sb, preferred);
         if (refreshed?.accessToken) {
@@ -221,14 +269,14 @@ export async function POST(req: Request) {
         }
       }
 
-      // Try delete
-      let del = await googleDeleteEvent(calendarId, eventId, accessToken);
+      // Try delete using the (row) calendar & event
+      let del = await googleDeleteEvent(calendarId, gEventId, accessToken);
 
       // If unauthorized, try refresh once then retry delete
       if (del.kind === "retry" && preferred.refresh_token && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         const refreshed = await refreshGoogleToken(sb, preferred);
         if (refreshed?.accessToken) {
-          del = await googleDeleteEvent(calendarId, eventId, refreshed.accessToken);
+          del = await googleDeleteEvent(calendarId, gEventId, refreshed.accessToken);
         }
       }
 
@@ -236,10 +284,19 @@ export async function POST(req: Request) {
         // Not ok and not handled
         const status = del.kind === "error" ? del.status : 401;
         const details = del.kind === "error" ? del.details : null;
-        return NextResponse.json({ error: "Google delete failed", details }, { status });
+        return NextResponse.json(
+          {
+            error: "Google delete failed",
+            details,
+            // Helpful debug (safe): shows which calendar/event we tried
+            attempted: { calendarId, eventId: gEventId },
+          },
+          { status }
+        );
       }
     } else if (provider === "microsoft") {
-      const del = await microsoftDeleteEvent(eventId, preferred.access_token!);
+      const extId = gEventId || rawEventId; // MS path typically sends external id
+      const del = await microsoftDeleteEvent(extId, preferred.access_token!);
       if (del.kind !== "ok") {
         return NextResponse.json(
           { error: "Microsoft delete failed", details: del.details },
@@ -250,23 +307,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Unsupported provider: ${provider}` }, { status: 400 });
     }
 
-    // 4) Mark as cancelled in DB
+    // 4) Mark THIS appointment row as cancelled (use id for safety)
     const updated_at = new Date().toISOString();
-    if (botId) {
-      await sb
-        .from("appointments")
-        .update({ status: "cancelled", updated_at })
-        .eq("bot_id", botId)
-        .eq("external_event_id", eventId);
-    } else {
-      // If only userId was provided, fall back by event id only
-      await sb
-        .from("appointments")
-        .update({ status: "cancelled", updated_at })
-        .eq("external_event_id", eventId);
+    const { error: updErr } = await admin()
+      .from("appointments")
+      .update({ status: "cancelled", updated_at })
+      .eq("id", appt.id);
+
+    if (updErr) {
+      // provider delete succeeded but DB update failed — still return ok to keep idempotency
+      return NextResponse.json({ ok: true, event_id: gEventId ?? rawEventId, dbUpdate: "failed" });
     }
 
-    return NextResponse.json({ ok: true, event_id: eventId });
+    return NextResponse.json({ ok: true, event_id: gEventId ?? rawEventId });
   } catch (e: any) {
     return NextResponse.json(
       { error: "Unhandled error", details: String(e?.message ?? e) },
