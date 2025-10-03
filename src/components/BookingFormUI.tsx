@@ -218,6 +218,7 @@ export default function BookingFormUI({
       url.searchParams.set("scope", "times");
       url.searchParams.set("date", d);
       url.searchParams.set("tz", args.timezone);
+      url.searchParams.set("step", "30"); // 🔒 force 30-minute grid on the client
       if (args.botId) url.searchParams.set("botId", args.botId);
       if (args.conversationId) url.searchParams.set("conversationId", args.conversationId);
       const res = await fetch(url.toString(), { cache: "no-store" });
