@@ -205,6 +205,19 @@ export default function BookingFormUI({
 
   /* ---------- DEFAULT dynamic providers (if you don't pass custom hooks) ---------- */
 
+  // 🔒 Keep only :00 and :30 on the client as a safety net
+  function enforceThirtyMinuteGrid(times: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const t of times) {
+      if (/^\d{2}:(00|30)$/.test(t) && !seen.has(t)) {
+        seen.add(t);
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
   async function defaultLoadTimeSlots(args: {
     date: Date;
     timezone: string;
@@ -218,7 +231,7 @@ export default function BookingFormUI({
       url.searchParams.set("scope", "times");
       url.searchParams.set("date", d);
       url.searchParams.set("tz", args.timezone);
-      url.searchParams.set("step", "30"); // 🔒 force 30-minute grid on the client
+      url.searchParams.set("step", "30"); // force 30-minute grid on the client
       if (args.botId) url.searchParams.set("botId", args.botId);
       if (args.conversationId) url.searchParams.set("conversationId", args.conversationId);
       const res = await fetch(url.toString(), { cache: "no-store" });
@@ -276,8 +289,9 @@ export default function BookingFormUI({
         botId: resolvedBotId,
         conversationId: resolvedConversationId,
       });
-      setTimeSlots(slots);
-      setFormData((p) => (p.time && !slots.includes(p.time) ? { ...p, time: "" } : p));
+      const fixed = enforceThirtyMinuteGrid(slots); // 👈 apply guard
+      setTimeSlots(fixed);
+      setFormData((p) => (p.time && !fixed.includes(p.time) ? { ...p, time: "" } : p));
     } catch (err) {
       console.debug("[BookingFormUI] refreshDaySlots failed:", err);
       setTimeSlots([]);
@@ -342,8 +356,9 @@ export default function BookingFormUI({
           conversationId: resolvedConversationId,
         });
         if (!cancelled) {
-          setTimeSlots(slots);
-          if (formData.time && !slots.includes(formData.time)) {
+          const fixed = enforceThirtyMinuteGrid(slots); // 👈 apply guard
+          setTimeSlots(fixed);
+          if (formData.time && !fixed.includes(formData.time)) {
             setFormData((p) => ({ ...p, time: "" }));
           }
         }
