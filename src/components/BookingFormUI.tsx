@@ -236,7 +236,7 @@ export default function BookingFormUI({
       url.searchParams.set("scope", "times");
       url.searchParams.set("date", d);
       url.searchParams.set("tz", args.timezone);
-      url.searchParams.set("step", "30"); // force 30-minute grid on the client
+      url.searchParams.set("step", "30");
       if (args.botId) url.searchParams.set("botId", args.botId);
       if (args.conversationId) url.searchParams.set("conversationId", args.conversationId);
       const res = await fetch(url.toString(), { cache: "no-store" });
@@ -294,7 +294,7 @@ export default function BookingFormUI({
         botId: resolvedBotId,
         conversationId: resolvedConversationId,
       });
-      const fixed = enforceThirtyMinuteGrid(slots); // 👈 apply guard
+      const fixed = enforceThirtyMinuteGrid(slots);
       setTimeSlots(fixed);
       setFormData((p) => (p.time && !fixed.includes(p.time) ? { ...p, time: "" } : p));
     } catch (err) {
@@ -361,7 +361,7 @@ export default function BookingFormUI({
           conversationId: resolvedConversationId,
         });
         if (!cancelled) {
-          const fixed = enforceThirtyMinuteGrid(slots); // 👈 apply guard
+          const fixed = enforceThirtyMinuteGrid(slots);
           setTimeSlots(fixed);
           if (formData.time && !fixed.includes(formData.time)) {
             setFormData((p) => ({ ...p, time: "" }));
@@ -439,7 +439,7 @@ export default function BookingFormUI({
     !!formData.name.trim() &&
     isValidEmail(formData.email);
 
-  // Default submitter (booking or rescheduling)
+  // Default submitter (booking only). Reschedule is handled by redirect.
   async function defaultSubmitter(p: BookingPayload): Promise<
     { ok: true; appointmentId?: string } | { ok: false; error: string }
   > {
@@ -447,35 +447,11 @@ export default function BookingFormUI({
       const startLocal = new Date(`${p.date}T${p.time}:00`);
       const endLocal = new Date(startLocal.getTime() + p.duration * 60_000);
 
-      /* NEW: if rescheduling, call the working endpoint with eventId */
-      if (actionMode === "reschedule") {
-        if (!resolvedEventId) {
-          return { ok: false as const, error: "Missing eventId for reschedule." };
-        }
-        const r2 = await fetch("/api/reschedule-event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            botId: resolvedBotId,
-            eventId: resolvedEventId,
-            startISO: startLocal.toISOString(),
-            endISO: endLocal.toISOString(),
-            timezone: p.timezone,
-          }),
-        });
-        const j2 = await r2.json().catch(() => ({}));
-        if (!r2.ok) {
-          return { ok: false as const, error: j2?.error ?? `HTTP ${r2.status}` };
-        }
-        return { ok: true as const, appointmentId: j2?.row?.id };
-      }
-
-      // otherwise create
       const res = await fetch("/api/create-event", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          botId: resolvedBotId,
+          botId: p.bot_id,
           summary: "Booking",
           description: p.notes ?? "",
           startISO: startLocal.toISOString(),
@@ -501,12 +477,36 @@ export default function BookingFormUI({
   const doSubmit = async () => {
     if (!validateDetails() || !formData.date) return;
 
-    /* NEW: guard if trying to reschedule without an event id */
-    if (actionMode === "reschedule" && !resolvedEventId) {
-      setSubmitError("Missing eventId. Open this page with ?mode=reschedule&eventId=<id>.");
+    // If rescheduling: redirect to full confirmation page with eventId (no API call here)
+    if (actionMode === "reschedule") {
+      if (!resolvedEventId) {
+        setSubmitError(
+          "Missing eventId. Open this page with ?mode=reschedule&eventId=<id>."
+        );
+        return;
+      }
+
+      const confirmUrl = new URL("/book", window.location.origin);
+      confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
+      confirmUrl.searchParams.set("embed", "1");
+      confirmUrl.searchParams.set("mode", "reschedule");
+      confirmUrl.searchParams.set("eventId", resolvedEventId);
+
+      // Optional flash details for instant rendering
+      confirmUrl.searchParams.set("flash", "rescheduled");
+      confirmUrl.searchParams.set("date", format(formData.date, "yyyy-MM-dd"));
+      confirmUrl.searchParams.set("time", formData.time);
+      confirmUrl.searchParams.set("duration", String(defaultDuration));
+      confirmUrl.searchParams.set("tz", timezone);
+      confirmUrl.searchParams.set("name", formData.name);
+      confirmUrl.searchParams.set("email", formData.email);
+      if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
+
+      window.top?.location.assign(confirmUrl.toString());
       return;
     }
 
+    // Normal booking
     const payload: BookingPayload = {
       bot_id: resolvedBotId,
       conversation_id: resolvedConversationId || null,
@@ -527,45 +527,16 @@ export default function BookingFormUI({
       const res = await effectiveSubmit(payload);
       if (!res.ok) throw new Error(res.error || "Unknown error");
 
-      // Immediately refresh the same day's server slots so the just-booked time disappears
       if (formData.date) {
         await refreshDaySlots(formData.date);
       }
 
       if (typeof window !== "undefined") {
         window.parent?.postMessage(
-          {
-            type:
-              actionMode === "reschedule" ? "booking:rescheduled" : "booking:created",
-            preview: onSubmit ? false : true,
-          },
+          { type: "booking:created", preview: onSubmit ? false : true },
           "*"
         );
       }
-
-      /* NEW: for reschedule, break out of the iframe and show full-page confirmation */
-      if (actionMode === "reschedule" && resolvedEventId) {
-        const confirmUrl = new URL("/book", window.location.origin);
-        confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
-        confirmUrl.searchParams.set("embed", "1");
-        confirmUrl.searchParams.set("mode", "reschedule");
-        confirmUrl.searchParams.set("eventId", resolvedEventId);
-
-        // pass tiny "flash" data so the page can render success immediately
-        confirmUrl.searchParams.set("flash", "rescheduled");
-        confirmUrl.searchParams.set("date", format(formData.date!, "yyyy-MM-dd"));
-        confirmUrl.searchParams.set("time", formData.time);
-        confirmUrl.searchParams.set("duration", String(defaultDuration));
-        confirmUrl.searchParams.set("tz", timezone);
-        confirmUrl.searchParams.set("name", formData.name);
-        confirmUrl.searchParams.set("email", formData.email);
-        if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
-
-        window.top?.location.assign(confirmUrl.toString());
-        return; // we navigated away
-      }
-
-      // Fallback: inline success (normal booking)
       setCurrentStep("success");
     } catch (err: any) {
       setSubmitError(err?.message || "Failed to book. Please try again.");
@@ -592,7 +563,8 @@ export default function BookingFormUI({
         return {
           ok: false as const,
           error:
-            (json?.error === "no_upcoming_match" && "No upcoming confirmed appointment found for this email.") ||
+            (json?.error === "no_upcoming_match" &&
+              "No upcoming confirmed appointment found for this email.") ||
             json?.error ||
             `HTTP ${res.status}`,
         };
@@ -617,7 +589,6 @@ export default function BookingFormUI({
       const res = await defaultCancelSubmitter({ email: cancelEmail });
       if (!res.ok) throw new Error(res.error);
 
-      // After cancel, refresh slots for the selected day (if any) to show the freed time
       if (formData.date) {
         await refreshDaySlots(formData.date);
       }
@@ -651,7 +622,6 @@ export default function BookingFormUI({
       }));
 
       if (qTz) setTimezone(qTz);
-      // keep defaultDuration as prop; qDur is parsed above in case you want it later
       setCurrentStep("success");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
