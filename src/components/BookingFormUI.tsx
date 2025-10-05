@@ -95,6 +95,9 @@ export default function BookingFormUI({
     (sp?.get("mode") as "cancel" | "reschedule" | "book" | null) ?? null;
   const prefillEmailFromUrl = sp?.get("email") ?? "";
   const prefillPhoneFromUrl = sp?.get("phone") ?? "";
+  /* NEW: capture event id for reschedule (from URL) */
+  const eventIdFromUrl =
+    sp?.get("eventId") ?? sp?.get("external_event_id") ?? undefined;
 
   // Resolve runtime values (props take priority, then URL)
   const resolvedBotId = useMemo(
@@ -109,6 +112,8 @@ export default function BookingFormUI({
     () => isEmbedded || embeddedFromUrl,
     [isEmbedded, embeddedFromUrl]
   );
+  /* NEW: resolved event id (currently only from URL, minimal change) */
+  const resolvedEventId = useMemo(() => eventIdFromUrl, [eventIdFromUrl]);
 
   const [currentStep, setCurrentStep] = useState<BookingStep>("date");
   const [timezone, setTimezone] = useState("");
@@ -434,7 +439,7 @@ export default function BookingFormUI({
     !!formData.name.trim() &&
     isValidEmail(formData.email);
 
-  // Default submitter (booking)
+  // Default submitter (booking or rescheduling)
   async function defaultSubmitter(p: BookingPayload): Promise<
     { ok: true; appointmentId?: string } | { ok: false; error: string }
   > {
@@ -442,6 +447,30 @@ export default function BookingFormUI({
       const startLocal = new Date(`${p.date}T${p.time}:00`);
       const endLocal = new Date(startLocal.getTime() + p.duration * 60_000);
 
+      /* NEW: if rescheduling, call the working endpoint with eventId */
+      if (actionMode === "reschedule") {
+        if (!resolvedEventId) {
+          return { ok: false as const, error: "Missing eventId for reschedule." };
+        }
+        const r2 = await fetch("/api/reschedule-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            botId: resolvedBotId,
+            eventId: resolvedEventId,
+            startISO: startLocal.toISOString(),
+            endISO: endLocal.toISOString(),
+            timezone: p.timezone,
+          }),
+        });
+        const j2 = await r2.json().catch(() => ({}));
+        if (!r2.ok) {
+          return { ok: false as const, error: j2?.error ?? `HTTP ${r2.status}` };
+        }
+        return { ok: true as const, appointmentId: j2?.row?.id };
+      }
+
+      // otherwise create
       const res = await fetch("/api/create-event", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -471,6 +500,12 @@ export default function BookingFormUI({
 
   const doSubmit = async () => {
     if (!validateDetails() || !formData.date) return;
+
+    /* NEW: guard if trying to reschedule without an event id */
+    if (actionMode === "reschedule" && !resolvedEventId) {
+      setSubmitError("Missing eventId. Open this page with ?mode=reschedule&eventId=<id>.");
+      return;
+    }
 
     const payload: BookingPayload = {
       bot_id: resolvedBotId,
