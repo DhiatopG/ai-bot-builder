@@ -542,6 +542,30 @@ export default function BookingFormUI({
           "*"
         );
       }
+
+      /* NEW: for reschedule, break out of the iframe and show full-page confirmation */
+      if (actionMode === "reschedule" && resolvedEventId) {
+        const confirmUrl = new URL("/book", window.location.origin);
+        confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
+        confirmUrl.searchParams.set("embed", "1");
+        confirmUrl.searchParams.set("mode", "reschedule");
+        confirmUrl.searchParams.set("eventId", resolvedEventId);
+
+        // pass tiny "flash" data so the page can render success immediately
+        confirmUrl.searchParams.set("flash", "rescheduled");
+        confirmUrl.searchParams.set("date", format(formData.date!, "yyyy-MM-dd"));
+        confirmUrl.searchParams.set("time", formData.time);
+        confirmUrl.searchParams.set("duration", String(defaultDuration));
+        confirmUrl.searchParams.set("tz", timezone);
+        confirmUrl.searchParams.set("name", formData.name);
+        confirmUrl.searchParams.set("email", formData.email);
+        if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
+
+        window.top?.location.assign(confirmUrl.toString());
+        return; // we navigated away
+      }
+
+      // Fallback: inline success (normal booking)
       setCurrentStep("success");
     } catch (err: any) {
       setSubmitError(err?.message || "Failed to book. Please try again.");
@@ -608,6 +632,30 @@ export default function BookingFormUI({
       setCancelLoading(false);
     }
   };
+
+  /* ---------- Auto-show success when we arrive via redirect ---------- */
+  useEffect(() => {
+    const flash = sp?.get("flash");
+    if (flash === "rescheduled" && modeFromUrl === "reschedule") {
+      const qDate = sp?.get("date");
+      const qTime = sp?.get("time") ?? "";
+      const qTz = sp?.get("tz") ?? timezone;
+
+      setFormData((p) => ({
+        ...p,
+        date: qDate ? new Date(`${qDate}T00:00:00`) : p.date,
+        time: qTime || p.time,
+        name: sp?.get("name") ?? p.name,
+        email: sp?.get("email") ?? p.email,
+        phone: sp?.get("phone") ?? p.phone,
+      }));
+
+      if (qTz) setTimezone(qTz);
+      // keep defaultDuration as prop; qDur is parsed above in case you want it later
+      setCurrentStep("success");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ---------- UI classes ---------- */
 
