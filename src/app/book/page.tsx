@@ -16,7 +16,7 @@ function parseDuration(s: string | null): number {
   return Math.min(180, Math.max(30, Math.round(n)))
 }
 
-/** Build "YYYY-MM-DDTHH:mm:00" (local) from date ("YYYY-MM-DD") & time ("HH:mm") */
+/** Build "YYYY-MM-DDTHH:mm:00" (local time) from date ("YYYY-MM-DD") & time ("HH:mm") */
 function toLocalISO(date: string, time: string) {
   return `${date}T${time}:00`
 }
@@ -31,7 +31,7 @@ function addMinutesHHMM(hhmm: string, minutes: number) {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-/** Local YYYY-MM-DD (avoid UTC shifting) */
+/** Local YYYY-MM-DD (avoid UTC shifting from toISOString) */
 function ymdLocal(d: Date) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -39,10 +39,10 @@ function ymdLocal(d: Date) {
   return `${y}-${m}-${day}`
 }
 
-function BookPageInner() {
+function BookingPageInner() {
   const sp = useSearchParams()
 
-  // Debug console when ?debug=1
+  // 🔎 Mobile debug console: only when ?debug=1
   useEffect(() => {
     if (typeof window === 'undefined') return
     const qs = new URLSearchParams(window.location.search)
@@ -53,21 +53,23 @@ function BookPageInner() {
     document.body.appendChild(s)
   }, [])
 
-  // Page-level params
+  // Capture once at page-level
   const pageBotId = sp.get('botId') || undefined
   const conversationId = sp.get('conversationId') || undefined
   const defaultDuration = parseDuration(sp.get('duration'))
-  const isEmbedded = ['1', 'true', 'yes'].includes((sp.get('embed') || '').toLowerCase())
+  const isEmbedded = ['1', 'true', 'yes'].includes(
+    (sp.get('embed') || '').toLowerCase()
+  )
   const tzBrowser = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
-  // --- Reschedule params from redirect ---
+  // --- NEW: read reschedule params ---
   const mode = sp.get('mode')
   const eventId = sp.get('eventId') || sp.get('external_event_id') || undefined
-  const qDate = sp.get('date') || undefined        // YYYY-MM-DD
-  const qTime = sp.get('time') || undefined        // HH:mm
-  const qTz   = sp.get('tz')   || tzBrowser
+  const qDate = sp.get('date') || undefined // YYYY-MM-DD
+  const qTime = sp.get('time') || undefined // HH:mm
+  const qTz = sp.get('tz') || tzBrowser
 
-  // Perform backend reschedule once when opened with the params
+  // ❶ If we arrived here from the iframe to reschedule, perform the backend call now.
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (mode !== 'reschedule') return
@@ -76,8 +78,10 @@ function BookPageInner() {
     const run = async () => {
       try {
         const startISO = toLocalISO(qDate, qTime)
-        const endISO   = toLocalISO(qDate, addMinutesHHMM(qTime, defaultDuration))
+        const endISO = toLocalISO(qDate, addMinutesHHMM(qTime, defaultDuration))
 
+        // Call your backend to actually reschedule.
+        // If your API path is different, just change this URL.
         const res = await fetch(`${API_BASE}/api/reschedule-event`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -90,21 +94,21 @@ function BookPageInner() {
           }),
         })
 
-        // Do not block UI; BookingFormUI will show success via ?flash=rescheduled
+        // We intentionally do not block UI here.
+        // BookingFormUI will show the success screen via ?flash=rescheduled.
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          console.error('[book] reschedule failed', res.status, err)
+          console.error('[booking] reschedule failed', res.status, err)
         }
       } catch (e) {
-        console.error('[book] reschedule error', e)
+        console.error('[booking] reschedule error', e)
       }
     }
 
     run()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, pageBotId, eventId, qDate, qTime, qTz, defaultDuration])
 
-  // Availability loader
+  // 1) Slots loader with botId fallback + local date
   const loadTimeSlots = useMemo(() => {
     return async ({
       date,
@@ -118,8 +122,9 @@ function BookPageInner() {
     }): Promise<string[]> => {
       const d = ymdLocal(date)
       const effectiveBotId = botId || pageBotId
+
       if (!effectiveBotId) {
-        console.warn('[book] missing botId for availability')
+        console.warn('[booking] missing botId for availability')
         return []
       }
 
@@ -137,11 +142,14 @@ function BookPageInner() {
     }
   }, [defaultDuration, tzBrowser, pageBotId])
 
-  // New bookings (reschedule handled in the effect above)
+  // 2) Safer submit with pageBotId fallback (NEW bookings only; reschedule is handled above)
   const onSubmit = useMemo(() => {
     return async (payload: BookingPayload) => {
       const startISO = toLocalISO(payload.date, payload.time)
-      const endISO   = toLocalISO(payload.date, addMinutesHHMM(payload.time, payload.duration))
+      const endISO = toLocalISO(
+        payload.date,
+        addMinutesHHMM(payload.time, payload.duration)
+      )
 
       const body = {
         bot_id: pageBotId || payload.bot_id,
@@ -181,22 +189,24 @@ function BookPageInner() {
         onSubmit={onSubmit}
       />
 
+      {/* Optional: tiny link to the email-only cancel page */}
       {pageBotId && (
         <div className="mt-4 text-xs text-gray-500">
           Need to cancel?{' '}
-          <a className="underline" href={`/book/cancel?botId=${encodeURIComponent(pageBotId)}`}>
+          <a className="underline" href={`/booking/cancel?botId=${encodeURIComponent(pageBotId)}`}>
             Cancel with your email
-          </a>.
+          </a>
+          .
         </div>
       )}
     </>
   )
 }
 
-export default function BookPage() {
+export default function BookingPage() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading…</div>}>
-      <BookPageInner />
+      <BookingPageInner />
     </Suspense>
   )
 }
