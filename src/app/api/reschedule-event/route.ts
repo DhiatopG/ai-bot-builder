@@ -1,3 +1,4 @@
+// src/app/api/reschedule-event/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -5,7 +6,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 // Google OAuth client (only needed if you also want to refresh here)
-const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID!;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
 
 function admin() {
@@ -19,6 +20,7 @@ type BodyIn = {
   startISO?: string; endISO?: string;     // preferred
   start?: string;   end?: string;         // accepted
   timezone?: string; timeZone?: string;
+  inviteeEmail?: string; email?: string;  // 👈 may be provided by caller
 };
 
 export async function POST(req: Request) {
@@ -31,6 +33,7 @@ export async function POST(req: Request) {
     const timezone  = body.timezone ?? body.timeZone ?? "UTC";
     const startISO  = body.startISO ?? body.start ?? null;
     const endISO    = body.endISO   ?? body.end   ?? null;
+    const inviteeEmail = body.inviteeEmail ?? body.email ?? null; // 👈 NEW
 
     if (!eventId)  return NextResponse.json({ error: "eventId required" }, { status: 400 });
     if (!startISO || !endISO)
@@ -122,6 +125,47 @@ export async function POST(req: Request) {
       }
     } else {
       return NextResponse.json({ error: `Unsupported provider: ${ic.provider}` }, { status: 400 });
+    }
+
+    // ---- (NEW) duplicate cleanup: cancel other future events for same invitee ----
+    try {
+      if (botId && inviteeEmail) {
+        const { data: dupRows, error: dupErr } = await sb
+          .from("appointments")
+          .select("id, external_event_id, starts_at")
+          .eq("bot_id", botId)
+          .eq("invitee_email", inviteeEmail)
+          .eq("status", "confirmed")
+          .neq("external_event_id", eventId)
+          .gte("starts_at", new Date().toISOString());
+
+        if (!dupErr && dupRows?.length) {
+          for (const row of dupRows) {
+            const otherId = row.external_event_id as string;
+            try {
+              if (ic.provider === "google") {
+                await fetch(
+                  `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(otherId)}?sendUpdates=all`,
+                  { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } }
+                );
+              } else if (ic.provider === "microsoft") {
+                await fetch(
+                  `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(otherId)}`,
+                  { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } }
+                );
+              }
+            } catch (e) {
+              console.warn("[reschedule] failed to delete duplicate event", otherId, e);
+            }
+            await sb
+              .from("appointments")
+              .update({ status: "canceled", updated_at: new Date().toISOString() })
+              .eq("id", row.id);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[reschedule] duplicate cleanup error", e);
     }
 
     // ---- update appointments row ----
