@@ -96,8 +96,27 @@ export default function BookingFormUI({
   const prefillEmailFromUrl = sp?.get("email") ?? "";
   const prefillPhoneFromUrl = sp?.get("phone") ?? "";
   /* NEW: capture event id for reschedule (from URL) */
-  const eventIdFromUrl =
+  /* read eventId from the iframe URL OR (if missing) from the parent page URL */
+const eventIdFromUrl = (() => {
+  const fromIframe =
     sp?.get("eventId") ?? sp?.get("external_event_id") ?? undefined;
+  if (fromIframe) return fromIframe;
+  try {
+    // works only if the parent page is same-origin
+    const parentQS =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.parent?.location?.search ?? "")
+        : null;
+    return (
+      parentQS?.get("eventId") ??
+      parentQS?.get("external_event_id") ??
+      undefined
+    );
+  } catch {
+    return undefined;
+  }
+})();
+
 
   // Resolve runtime values (props take priority, then URL)
   const resolvedBotId = useMemo(
