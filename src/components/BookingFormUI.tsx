@@ -478,33 +478,38 @@ export default function BookingFormUI({
     if (!validateDetails() || !formData.date) return;
 
     // If rescheduling: redirect to full confirmation page with eventId (no API call here)
-    if (actionMode === "reschedule") {
-      if (!resolvedEventId) {
-        setSubmitError(
-          "Missing eventId. Open this page with ?mode=reschedule&eventId=<id>."
-        );
-        return;
-      }
+    // If rescheduling: redirect to full confirmation page with eventId (no API call here)
+if (actionMode === "reschedule") {
+  if (!resolvedEventId) {
+    setSubmitError(
+      "Missing eventId. Open this page with ?mode=reschedule&eventId=<id>."
+    );
+    return;
+  }
 
-      const confirmUrl = new URL("/book", window.location.origin);
-      confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
-      confirmUrl.searchParams.set("embed", "1");
-      confirmUrl.searchParams.set("mode", "reschedule");
-      confirmUrl.searchParams.set("eventId", resolvedEventId);
+  const confirmUrl = new URL("/book", window.location.origin);
+  confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
+  confirmUrl.searchParams.set("embed", "1");
+  confirmUrl.searchParams.set("mode", "reschedule");
+  confirmUrl.searchParams.set("eventId", resolvedEventId);
 
-      // Optional flash details for instant rendering
-      confirmUrl.searchParams.set("flash", "rescheduled");
-      confirmUrl.searchParams.set("date", format(formData.date, "yyyy-MM-dd"));
-      confirmUrl.searchParams.set("time", formData.time);
-      confirmUrl.searchParams.set("duration", String(defaultDuration));
-      confirmUrl.searchParams.set("tz", timezone);
-      confirmUrl.searchParams.set("name", formData.name);
-      confirmUrl.searchParams.set("email", formData.email);
-      if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
+  // include invitee email so /book has it
+  confirmUrl.searchParams.set("email", (formData.email || "").trim());
 
-      window.top?.location.assign(confirmUrl.toString());
-      return;
-    }
+  // Optional: pass details so the confirmation can render instantly
+  confirmUrl.searchParams.set("flash", "rescheduled");
+  confirmUrl.searchParams.set("date", format(formData.date!, "yyyy-MM-dd"));
+  confirmUrl.searchParams.set("time", formData.time);
+  confirmUrl.searchParams.set("duration", String(defaultDuration));
+  confirmUrl.searchParams.set("tz", timezone);
+  confirmUrl.searchParams.set("name", formData.name);
+  if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
+
+  // break out of iframe and go to the confirmation page
+  window.top?.location.assign(confirmUrl.toString());
+  return;
+}
+
 
     // Normal booking
     const payload: BookingPayload = {
