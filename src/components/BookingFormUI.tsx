@@ -97,26 +97,25 @@ export default function BookingFormUI({
   const prefillPhoneFromUrl = sp?.get("phone") ?? "";
   /* NEW: capture event id for reschedule (from URL) */
   /* read eventId from the iframe URL OR (if missing) from the parent page URL */
-const eventIdFromUrl = (() => {
-  const fromIframe =
-    sp?.get("eventId") ?? sp?.get("external_event_id") ?? undefined;
-  if (fromIframe) return fromIframe;
-  try {
-    // works only if the parent page is same-origin
-    const parentQS =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.parent?.location?.search ?? "")
-        : null;
-    return (
-      parentQS?.get("eventId") ??
-      parentQS?.get("external_event_id") ??
-      undefined
-    );
-  } catch {
-    return undefined;
-  }
-})();
-
+  const eventIdFromUrl = (() => {
+    const fromIframe =
+      sp?.get("eventId") ?? sp?.get("external_event_id") ?? undefined;
+    if (fromIframe) return fromIframe;
+    try {
+      // works only if the parent page is same-origin
+      const parentQS =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.parent?.location?.search ?? "")
+          : null;
+      return (
+        parentQS?.get("eventId") ??
+        parentQS?.get("external_event_id") ??
+        undefined
+      );
+    } catch {
+      return undefined;
+    }
+  })();
 
   // Resolve runtime values (props take priority, then URL)
   const resolvedBotId = useMemo(
@@ -497,38 +496,36 @@ const eventIdFromUrl = (() => {
     if (!validateDetails() || !formData.date) return;
 
     // If rescheduling: redirect to full confirmation page with eventId (no API call here)
-    // If rescheduling: redirect to full confirmation page with eventId (no API call here)
-if (actionMode === "reschedule") {
-  if (!resolvedEventId) {
-    setSubmitError(
-      "Missing eventId. Open this page with ?mode=reschedule&eventId=<id>."
-    );
-    return;
-  }
+    if (actionMode === "reschedule") {
+      if (!resolvedEventId) {
+        setSubmitError(
+          "Missing eventId. Open this page with ?mode=reschedule&eventId=<id>."
+        );
+        return;
+      }
 
-  const confirmUrl = new URL("/book", window.location.origin);
-  confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
-  confirmUrl.searchParams.set("embed", "1");
-  confirmUrl.searchParams.set("mode", "reschedule");
-  confirmUrl.searchParams.set("eventId", resolvedEventId);
+      const confirmUrl = new URL("/book", window.location.origin);
+      confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
+      confirmUrl.searchParams.set("embed", "1");
+      confirmUrl.searchParams.set("mode", "reschedule");
+      confirmUrl.searchParams.set("eventId", resolvedEventId);
 
-  // include invitee email so /book has it
-  confirmUrl.searchParams.set("email", (formData.email || "").trim());
+      // include invitee email so /book has it
+      confirmUrl.searchParams.set("email", (formData.email || "").trim());
 
-  // Optional: pass details so the confirmation can render instantly
-  confirmUrl.searchParams.set("flash", "rescheduled");
-  confirmUrl.searchParams.set("date", format(formData.date!, "yyyy-MM-dd"));
-  confirmUrl.searchParams.set("time", formData.time);
-  confirmUrl.searchParams.set("duration", String(defaultDuration));
-  confirmUrl.searchParams.set("tz", timezone);
-  confirmUrl.searchParams.set("name", formData.name);
-  if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
+      // Optional: pass details so the confirmation can render instantly
+      confirmUrl.searchParams.set("flash", "rescheduled");
+      confirmUrl.searchParams.set("date", format(formData.date!, "yyyy-MM-dd"));
+      confirmUrl.searchParams.set("time", formData.time);
+      confirmUrl.searchParams.set("duration", String(defaultDuration));
+      confirmUrl.searchParams.set("tz", timezone);
+      confirmUrl.searchParams.set("name", formData.name);
+      if (formData.phone) confirmUrl.searchParams.set("phone", formData.phone);
 
-  // break out of iframe and go to the confirmation page
-  window.top?.location.assign(confirmUrl.toString());
-  return;
-}
-
+      // break out of iframe and go to the confirmation page
+      window.top?.location.assign(confirmUrl.toString());
+      return;
+    }
 
     // Normal booking
     const payload: BookingPayload = {
@@ -666,6 +663,34 @@ if (actionMode === "reschedule") {
   const secondaryBtn =
     "px-3 py-2 rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200";
 
+  /* ---------- Build 'Open full page' URL safely ---------- */
+  const fullPageHref = useMemo(() => {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://example.com";
+    const url = new URL("/book", origin);
+
+    if (resolvedBotId) url.searchParams.set("botId", resolvedBotId);
+    url.searchParams.set("embed", "1");
+    if (resolvedConversationId)
+      url.searchParams.set("conversationId", resolvedConversationId);
+
+    if (actionMode === "reschedule") {
+      url.searchParams.set("mode", "reschedule");
+      if (resolvedEventId) url.searchParams.set("eventId", resolvedEventId);
+      if (formData.email)
+        url.searchParams.set("email", (formData.email || "").trim());
+    }
+
+    // Return path+query only so it works in any host
+    return `${url.pathname}${url.search}`;
+  }, [
+    resolvedBotId,
+    resolvedConversationId,
+    actionMode,
+    resolvedEventId,
+    formData.email,
+  ]);
+
   /* ================================================================== */
 
   return (
@@ -785,7 +810,7 @@ if (actionMode === "reschedule") {
               className={`flex items-center justify-center w-8 h-8 rounded-full ${
                 currentStep === "date"
                   ? "bg-blue-600 text-white"
-                  : ["time", "details", "success"].includes(currentStep)
+                  : (["time", "details", "success"] as BookingStep[]).includes(currentStep)
                   ? "bg-green-500 text-white"
                   : "bg-gray-200 text-gray-600"
               }`}
@@ -794,7 +819,7 @@ if (actionMode === "reschedule") {
             </div>
             <div
               className={`w-8 h-0.5 ${
-                ["time", "details", "success"].includes(currentStep)
+                (["time", "details", "success"] as BookingStep[]).includes(currentStep)
                   ? "bg-green-500"
                   : "bg-gray-200"
               }`}
@@ -803,7 +828,7 @@ if (actionMode === "reschedule") {
               className={`flex items-center justify-center w-8 h-8 rounded-full ${
                 currentStep === "time"
                   ? "bg-blue-600 text-white"
-                  : ["details", "success"].includes(currentStep)
+                  : (["details", "success"] as BookingStep[]).includes(currentStep)
                   ? "bg-green-500 text-white"
                   : "bg-gray-200 text-gray-600"
               }`}
@@ -812,7 +837,7 @@ if (actionMode === "reschedule") {
             </div>
             <div
               className={`w-8 h-0.5 ${
-                ["details", "success"].includes(currentStep)
+                (["details", "success"] as BookingStep[]).includes(currentStep)
                   ? "bg-green-500"
                   : "bg-gray-200"
               }`}
@@ -1079,9 +1104,7 @@ if (actionMode === "reschedule") {
             {resolvedIsEmbedded && (
               <div className="text-center">
                 <a
-                  href={`/book?botId=${resolvedBotId ?? ""}${
-                    resolvedConversationId ? `&conversationId=${resolvedConversationId}` : ""
-                  }`}
+                  href={fullPageHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-blue-600 hover:text-blue-700 underline"
