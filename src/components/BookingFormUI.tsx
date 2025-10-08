@@ -169,6 +169,16 @@ export default function BookingFormUI({
     notes: "",
   });
 
+  /* ---------- [C] email-first reschedule finder state ---------- */
+  const [lookupEmail, setLookupEmail] = useState(formData.email || "");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  // local eventId used only on the full-page reschedule flow
+  const [eventIdLocal, setEventIdLocal] = useState<string | undefined>(undefined);
+
+  const needEventId =
+    actionMode === "reschedule" && !sp?.get("eventId") && !eventIdLocal;
+
   /* ---------- timezone ---------- */
   useEffect(() => {
     setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -202,6 +212,37 @@ export default function BookingFormUI({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ---------- [C] finder function ---------- */
+  async function findAppointmentByEmail() {
+    setLookupError(null);
+    const em = (lookupEmail || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+      setLookupError("Enter a valid email.");
+      return;
+    }
+    try {
+      setLookupLoading(true);
+      const res = await fetch("/api/appointments/find-upcoming-by-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId: resolvedBotId, email: em }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        setLookupError(
+          json?.error === "no_upcoming_match"
+            ? "No upcoming confirmed appointment found for this email."
+            : (json?.error || `HTTP ${res.status}`)
+        );
+        return;
+      }
+      setEventIdLocal(json.appointment.eventId);
+      setFormData((p) => ({ ...p, email: em }));
+    } finally {
+      setLookupLoading(false);
+    }
+  }
 
   /* ---------- auto-resize iframe when embedded ---------- */
   useEffect(() => {
@@ -497,10 +538,11 @@ export default function BookingFormUI({
 
     // If rescheduling: redirect to full confirmation page with eventId (no API call here)
     if (actionMode === "reschedule") {
-      if (!resolvedEventId) {
-        setSubmitError(
-          "Missing eventId. Open this page with ?mode=reschedule&eventId=<id>."
-        );
+      /* ---------- [E] prefer local lookup, then URL param ---------- */
+      const eventId = sp?.get("eventId") || eventIdLocal;
+
+      if (!eventId) {
+        setSubmitError("Please find your appointment by email first.");
         return;
       }
 
@@ -508,12 +550,8 @@ export default function BookingFormUI({
       confirmUrl.searchParams.set("botId", resolvedBotId ?? "");
       confirmUrl.searchParams.set("embed", "1");
       confirmUrl.searchParams.set("mode", "reschedule");
-      confirmUrl.searchParams.set("eventId", resolvedEventId);
-
-      // include invitee email so /book has it
+      confirmUrl.searchParams.set("eventId", eventId);
       confirmUrl.searchParams.set("email", (formData.email || "").trim());
-
-      // Optional: pass details so the confirmation can render instantly
       confirmUrl.searchParams.set("flash", "rescheduled");
       confirmUrl.searchParams.set("date", format(formData.date!, "yyyy-MM-dd"));
       confirmUrl.searchParams.set("time", formData.time);
@@ -691,6 +729,19 @@ export default function BookingFormUI({
     formData.email,
   ]);
 
+  /* ---------- [A] Build 'Reschedule full page' href (email forwarded) ---------- */
+  const rescheduleHref = useMemo(() => {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://example.com";
+    const url = new URL("/book", origin);
+    if (resolvedBotId) url.searchParams.set("botId", resolvedBotId);
+    url.searchParams.set("embed", "1");
+    url.searchParams.set("mode", "reschedule");
+    if (resolvedConversationId) url.searchParams.set("conversationId", resolvedConversationId);
+    if (formData.email) url.searchParams.set("email", (formData.email || "").trim());
+    return `${url.pathname}${url.search}`;
+  }, [resolvedBotId, resolvedConversationId, formData.email]);
+
   /* ================================================================== */
 
   return (
@@ -708,10 +759,11 @@ export default function BookingFormUI({
             Cancel Appointment
           </button>
           <button
+            /* ---------- [B] Open reschedule in new tab; keep iframe booking-simple ---------- */
             onClick={() => {
-              setActionMode("reschedule");
+              window.open(rescheduleHref, "_blank", "noopener,noreferrer");
+              setActionMode("book");   // keep iframe simple
               setCurrentStep("date");
-              setTimeout(() => smoothScrollTo("book-section"), 0);
             }}
             className={primaryBtn}
           >
@@ -936,7 +988,7 @@ export default function BookingFormUI({
 
             <div className="text-center mb-2">
               <p className="text-gray-600">
-                {format(formData.date, "EEEE, MMMM d, yyyy")}
+                {formData.date && format(formData.date, "EEEE, MMMM d, yyyy")}
               </p>
             </div>
 
@@ -1082,6 +1134,31 @@ export default function BookingFormUI({
                 />
               </div>
             </div>
+
+            {/* ---------- [D] Find-by-email helper (full-page reschedule) ---------- */}
+            {actionMode === "reschedule" && needEventId && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <p className="text-sm">
+                  Enter the email you used to book. We’ll find your appointment.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={lookupEmail}
+                    onChange={(e) => setLookupEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  <button
+                    onClick={findAppointmentByEmail}
+                    disabled={lookupLoading || !resolvedBotId}
+                    className="px-3 py-2 rounded-md text-white bg-blue-600 disabled:opacity-50"
+                  >
+                    {lookupLoading ? "Finding…" : "Find"}
+                  </button>
+                </div>
+                {lookupError && <div className="text-sm text-red-700">{lookupError}</div>}
+              </div>
+            )}
 
             {submitError && (
               <div className="text-sm text-red-600 -mb-2">{submitError}</div>
