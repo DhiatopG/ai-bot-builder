@@ -60,7 +60,7 @@ function withCors(res: NextResponse, req: Request) {
 type BodyIn = {
   botId?: string; // required
   email?: string; // required (invitee_email)
-  appointmentId?: string; // optional: exact row if belongs to botId+email and is upcoming+confirmed
+  appointmentId?: string; // optional: exact row if belongs to botId+email and is upcoming
   startsAt?: string; // optional ISO; exact match against starts_at (UTC)
 };
 
@@ -125,8 +125,11 @@ export async function POST(req: Request) {
 
     const sb = admin();
 
+    // Cancel any UPCOMING appointment that is NOT already in a terminal state
+    const EXCLUDED_STATUSES = ["canceled", "cancelled", "completed", "done", "no_show"];
+
     // 1) Choose target appointment
-    // Priority: appointmentId → startsAt → soonest upcoming confirmed
+    // Priority: appointmentId → startsAt → soonest upcoming
     let row:
       | {
           id: string;
@@ -149,7 +152,7 @@ export async function POST(req: Request) {
         )
         .eq("id", appointmentId)
         .eq("bot_id", botId)
-        .eq("status", "confirmed")
+        .not("status", "in", `(${EXCLUDED_STATUSES.map((s) => `"${s}"`).join(",")})`)
         .gte("starts_at", new Date().toISOString())
         .ilike("invitee_email", email)
         .maybeSingle();
@@ -157,7 +160,7 @@ export async function POST(req: Request) {
       if (error) {
         const res = NextResponse.json(
           { ok: false, error: "lookup_failed", details: error.message },
-          { status: 500 }
+          { status: 200 }
         );
         return withCors(res, req);
       }
@@ -165,7 +168,7 @@ export async function POST(req: Request) {
       if (!row) {
         const res = NextResponse.json(
           { ok: false, error: "no_upcoming_match_for_id" },
-          { status: 404 }
+          { status: 200 }
         );
         return withCors(res, req);
       }
@@ -176,7 +179,7 @@ export async function POST(req: Request) {
           "id, bot_id, status, starts_at, ends_at, invitee_email, provider, provider_event_id, external_event_id"
         )
         .eq("bot_id", botId)
-        .eq("status", "confirmed")
+        .not("status", "in", `(${EXCLUDED_STATUSES.map((s) => `"${s}"`).join(",")})`)
         .eq("starts_at", startsAtISO)
         .ilike("invitee_email", email)
         .maybeSingle();
@@ -184,7 +187,7 @@ export async function POST(req: Request) {
       if (error) {
         const res = NextResponse.json(
           { ok: false, error: "lookup_failed", details: error.message },
-          { status: 500 }
+          { status: 200 }
         );
         return withCors(res, req);
       }
@@ -192,7 +195,7 @@ export async function POST(req: Request) {
       if (!row) {
         const res = NextResponse.json(
           { ok: false, error: "no_exact_match_for_startsAt" },
-          { status: 404 }
+          { status: 200 }
         );
         return withCors(res, req);
       }
@@ -203,7 +206,7 @@ export async function POST(req: Request) {
           "id, bot_id, status, starts_at, ends_at, invitee_email, provider, provider_event_id, external_event_id"
         )
         .eq("bot_id", botId)
-        .eq("status", "confirmed")
+        .not("status", "in", `(${EXCLUDED_STATUSES.map((s) => `"${s}"`).join(",")})`)
         .gte("starts_at", new Date().toISOString())
         .ilike("invitee_email", email)
         .order("starts_at", { ascending: true })
@@ -213,13 +216,13 @@ export async function POST(req: Request) {
       if (error) {
         const res = NextResponse.json(
           { ok: false, error: "lookup_failed", details: error.message },
-          { status: 500 }
+          { status: 200 }
         );
         return withCors(res, req);
       }
       row = data ?? null;
       if (!row) {
-        const res = NextResponse.json({ ok: false, error: "no_upcoming_match" }, { status: 404 });
+        const res = NextResponse.json({ ok: false, error: "no_upcoming_match" }, { status: 200 });
         return withCors(res, req);
       }
     }
@@ -269,7 +272,7 @@ export async function POST(req: Request) {
     if (updErr) {
       const res = NextResponse.json(
         { ok: false, error: "db_cancel_failed", details: updErr.message },
-        { status: 500 }
+        { status: 200 }
       );
       return withCors(res, req);
     }
@@ -284,7 +287,7 @@ export async function POST(req: Request) {
   } catch (e: any) {
     const res = NextResponse.json(
       { ok: false, error: "unhandled", details: String(e?.message ?? e) },
-      { status: 500 }
+      { status: 200 }
     );
     return withCors(res, req);
   }
