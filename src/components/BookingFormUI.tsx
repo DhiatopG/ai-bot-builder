@@ -7,6 +7,9 @@ import { format, startOfDay } from "date-fns";
 import { Calendar, Clock, User, CheckCircle, ArrowLeft } from "lucide-react";
 import "react-day-picker/dist/style.css";
 
+
+// ✅ define once at module scope (recommended)
+const FIND_API = "/api/appointments/find-upcoming-by-email";
 /* ---------- public types ---------- */
 
 export type BookingStep = "date" | "time" | "details" | "success";
@@ -223,7 +226,7 @@ export default function BookingFormUI({
     }
     try {
       setLookupLoading(true);
-      const res = await fetch("/api/appointments/find-upcoming-by-email", {
+      const res = await fetch(FIND_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ botId: resolvedBotId, email: em }),
