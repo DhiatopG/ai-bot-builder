@@ -118,7 +118,16 @@ export default function LoginPage() {
         {/* Logo and Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <Image src="/logo.png" alt="in60second Logo" width={64} height={64} />
+            <Link href="/" aria-label="Go to homepage" className="inline-flex items-center">
+              <Image
+                src="/logo.png"
+                alt="in60second Logo"
+                width={64}
+                height={64}
+                priority
+                className="cursor-pointer"
+              />
+            </Link>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">in60second</h1>
           <p className="text-gray-600">
