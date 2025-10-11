@@ -82,6 +82,10 @@ export default function CalendarPage() {
   const [gCalendarId, setGCalendarId] = useState<string | null>(null)
   const [authUserId, setAuthUserId] = useState<string | null>(null)
 
+  // NEW: extra status details for the UI
+  const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
+  const [lastChecked, setLastChecked] = useState<string | null>(null)
+
   // hydration-safe mount flag
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
@@ -95,11 +99,15 @@ export default function CalendarPage() {
       const { data: auth } = await supabase.auth.getUser()
       const uid = auth?.user?.id || null
       setAuthUserId(uid)
+      // capture email for status line
+      setConnectedEmail(auth?.user?.email ?? null)
+
       if (!uid) {
         setGConnected(false)
         setGValid(false)
         setGCalendarId(null)
         if (!silent) toast.success('Refreshed', { id: toastId })
+        setLastChecked(new Date().toLocaleString())
         return
       }
 
@@ -124,11 +132,13 @@ export default function CalendarPage() {
       }
 
       if (!silent) toast.success('Refreshed', { id: toastId })
+      setLastChecked(new Date().toLocaleString())
     } catch (e: any) {
       if (!silent) toast.error(e?.message || 'Failed to recheck', { id: toastId })
       setGConnected(false)
       setGValid(false)
       setGCalendarId(null)
+      setLastChecked(new Date().toLocaleString())
     } finally {
       setGLoading(false)
     }
@@ -350,48 +360,66 @@ export default function CalendarPage() {
         {gLoading ? (
           <p className="text-sm text-gray-500">Checking connection…</p>
         ) : (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm">
-              <div>
-                Status{' '}
-                {gConnected ? (
-                  <span className={gValid ? 'text-green-600' : 'text-orange-600'}>
-                    {gValid ? 'Connected' : 'Connected (needs refresh)'}
-                  </span>
-                ) : (
-                  <span className="text-red-600">Not connected</span>
-                )}
+          <>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm">
+                <div>
+                  Status{' '}
+                  {gConnected ? (
+                    <span className={gValid ? 'text-green-600' : 'text-orange-600'}>
+                      {gValid ? 'Connected' : 'Connected (needs refresh)'}
+                    </span>
+                  ) : (
+                    <span className="text-red-600">Not connected</span>
+                  )}
+                </div>
+                <div>Calendar ID: <span className="text-gray-700">{gCalendarId || '—'}</span></div>
               </div>
-              <div>Calendar ID: <span className="text-gray-700">{gCalendarId || '—'}</span></div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleGoogleConnect}
+                  disabled={gConnected && gValid}
+                  className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition disabled:opacity-50"
+                >
+                  {gConnected ? (gValid ? 'Connected' : 'Refresh Connection') : 'Connect Google'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => refreshGoogleStatus({ silent: false })} // show "Refreshed"
+                  disabled={gLoading}
+                  className="cursor-pointer border px-4 py-2 rounded-md disabled:opacity-50"
+                >
+                  Recheck
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoogleDisconnect}
+                  disabled={!gConnected || gLoading}
+                  className="cursor-pointer border border-red-500 text-red-600 px-4 py-2 rounded-md hover:bg-red-50 disabled:opacity-50"
+                  title="Disconnect Google Calendar for this user"
+                >
+                  Disconnect
+                </button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleGoogleConnect}
-                disabled={gConnected && gValid}
-                className="cursor-pointer bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-black transition disabled:opacity-50"
+
+            {/* NEW: status line + Google permissions link */}
+            <p className="mt-2 text-sm text-gray-700">
+              Connected as <strong>{connectedEmail ?? '—'}</strong> • Calendar ID: <code>{gCalendarId ?? '—'}</code> • Last checked: {lastChecked ?? '—'}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Disconnect removes your stored tokens from In60second. You can also manage or revoke access from your Google Account:&nbsp;
+              <a
+                href="https://myaccount.google.com/permissions"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 underline"
               >
-                {gConnected ? (gValid ? 'Connected' : 'Refresh Connection') : 'Connect Google'}
-              </button>
-              <button
-                type="button"
-                onClick={() => refreshGoogleStatus({ silent: false })} // show "Refreshed"
-                disabled={gLoading}
-                className="cursor-pointer border px-4 py-2 rounded-md disabled:opacity-50"
-              >
-                Recheck
-              </button>
-              <button
-                type="button"
-                onClick={handleGoogleDisconnect}
-                disabled={!gConnected || gLoading}
-                className="cursor-pointer border border-red-500 text-red-600 px-4 py-2 rounded-md hover:bg-red-50 disabled:opacity-50"
-                title="Disconnect Google Calendar for this user"
-              >
-                Disconnect
-              </button>
-            </div>
-          </div>
+                myaccount.google.com/permissions
+              </a>.
+            </p>
+          </>
         )}
         <p className="text-xs text-gray-500">
           Connecting lets the bot read busy times and create appointments on your calendar.

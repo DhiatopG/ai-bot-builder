@@ -1,6 +1,6 @@
-// /lib/prompt/buildSystemPrompt.ts
+// src/lib/prompt/buildSystemPrompt.ts
 
-type BuildArgs = {
+export type BuildArgs = {
   detected_intent: string
   toneInstruction?: string
   iframeInstruction?: string
@@ -8,14 +8,12 @@ type BuildArgs = {
   contactInstruction?: string
   noLinkUntilConfirmInstruction?: string
   suppressBookingAfterDoneInstruction?: string
-  // minimal additions
   afterHours?: boolean
   calendarAlreadyShown?: boolean
   bookingCompleted?: boolean
 }
 
-
-export function buildSystemPrompt(a: BuildArgs) {
+export function buildSystemPrompt(a: BuildArgs): string {
   const {
     detected_intent,
     toneInstruction = '',
@@ -24,7 +22,6 @@ export function buildSystemPrompt(a: BuildArgs) {
     contactInstruction = '',
     noLinkUntilConfirmInstruction = '',
     suppressBookingAfterDoneInstruction = '',
-    // minimal additions
     afterHours = false,
     calendarAlreadyShown = false,
     bookingCompleted = false,
@@ -47,7 +44,7 @@ If the visitor asks a question related to services offered (e.g., pricing, appoi
 - Confirm politely whether it's something we can help with — based only on the provided content.
 - Ask a relevant follow-up to understand their needs.
 - If appropriate, guide them to the real contact method — like a contact form, calendar, or email — using the actual link provided in the knowledge.
-- If no contact method is available in the knowledge, ask how else you can assist. Do not make up contact info or use placeholders.
+- If the user's request is unclear or not covered by the knowledge, ask up to 1–2 concise clarifying questions to pinpoint what they need (e.g., service type, timing, location, budget). Offer a short list of supported options if helpful. If after clarification the info still isn’t in our knowledge, state that plainly and suggest the closest supported next step (e.g., a real contact method that exists in the knowledge). Do not invent contact info or use placeholders.
 
 Never mention scraping, AI, bots, or tech unless the business explicitly stated it in their content.
 

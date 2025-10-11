@@ -206,8 +206,12 @@ export async function orchestrateChat({
   // NEW — fast path: user said "I need to cancel / I want to cancel"
   {
     const offer = await maybeOfferCancelButtons({
-      admin, botId, conversation_id, user_auth_id,
-      userLast, entities, visitor_email
+      admin,
+      botId,
+      conversation_id,
+      user_auth_id,
+      userLast,
+      // removed: entities, visitor_email (not in function type)
     });
     if (offer) return offer;
   }
@@ -247,8 +251,7 @@ export async function orchestrateChat({
     rawUserText: meaningfulUserText || userLast
   });
 
-  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  // ---- BOOKING SHORT-CIRCUIT (must run before any KB/LLM) ---- // <<< CHANGE
+  // ---- BOOKING SHORT-CIRCUIT (must run before any KB/LLM) ----
   const bookingNow =
     intentForAction === 'booking' ||
     bookingFlags?.strongBookingNow ||
@@ -261,7 +264,6 @@ export async function orchestrateChat({
       action = { type: 'confirm', message: 'Would you like to see available times now?' } as any;
     }
   }
-  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
   // --- debug: context & booking ---
   dbg(reqId, 'context.init', {
@@ -337,7 +339,7 @@ export async function orchestrateChat({
     everProvidedEmail,
   });
 
-  // --- KB FALLBACK MUST NOT BLOCK BOOKING OR CAPTURE CONTINUATIONS --- // <<< CHANGE
+  // --- KB FALLBACK MUST NOT BLOCK BOOKING OR CAPTURE CONTINUATIONS ---
   if (!kbHasCoverage && !(action && (action.type === 'confirm' || action.type === 'open_calendar'))) {
     const justGaveName =
       (lastAskedName || _askedNameLast || askedNameBefore) &&
@@ -366,7 +368,6 @@ export async function orchestrateChat({
         : { answer: assistantText }
     );
   }
-  // -------------------------------------------------------------------------
 
   // quick capture yes/no branches (now safe; KB fallback has been handled above)
   // UPDATED: accept _askedNameLast as a valid trigger too
@@ -413,9 +414,9 @@ export async function orchestrateChat({
 
   // email-turn lead save
   const alreadyConfirmed = Array.isArray(history) && history.some(({ content }: any) => /you'?re all set|all set, .*saved your email/i.test(String(content || '')));
-  const nowHasEmailOrPhone = !!(combinedEmail || (entities as any).phone);
-  if ((_askedEmailLast || lastAskedEmail || askedEmailBefore) && isEmail(userLast) && (alreadyConfirmed || nowHasEmailOrPhone)) {
-    dbg(reqId, 'branch.EMAIL_CONFIRM_SAVE', { _askedEmailLast, lastAskedEmail, askedEmailBefore, isEmailTurn: isEmail(userLast), alreadyConfirmed, nowHasEmailOrPhone });
+  const hasEmailOrPhoneNow = !!(combinedEmail || (entities as any).phone);
+  if ((_askedEmailLast || lastAskedEmail || askedEmailBefore) && isEmail(userLast) && (alreadyConfirmed || hasEmailOrPhoneNow)) {
+    dbg(reqId, 'branch.EMAIL_CONFIRM_SAVE', { _askedEmailLast, lastAskedEmail, askedEmailBefore, isEmailTurn: isEmail(userLast), alreadyConfirmed, hasEmailOrPhoneNow });
     await saveEmailTurnLead({ admin, req, botId, conversation_id, user_auth_id, userLast, resolvedName, recentHistory });
     const assistantText = `Thanks${resolvedName ? `, ${capName(resolvedName)}` : ''}. We'll use this for support if needed.`;
     return respondAndLog(admin, { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? intent ?? '') }, { answer: assistantText });
@@ -513,7 +514,7 @@ export async function orchestrateChat({
   const resp = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages, temperature: 0.3 });
   let finalAnswer = resp.choices[0]?.message?.content?.trim() || String(action.message || '');
 
-  // anti-booking early (do NOT suppress on real booking turns) // <<< CHANGE
+  // anti-booking early (do NOT suppress on real booking turns)
   const assistantTurnsSoFar = recentHistory.filter(({ role }) => role === 'assistant').length;
   const lowIntentInfo = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
   const allowLeadCapture =
@@ -547,7 +548,7 @@ export async function orchestrateChat({
     history.some(({ content }: any) => /\b(calendar|appointment|schedule|book)\b/i.test(String(content || '')));
 
   const hasNameNow = !!resolvedName;
-  const hasEmailOrPhoneNow = nowHasEmailOrPhone;
+  // reuse previously computed hasEmailOrPhoneNow; do NOT redeclare
 
   if (canAskNow && !everBookingFlow2 && lowIntentInfo) {
     if (!hasNameNow) {
