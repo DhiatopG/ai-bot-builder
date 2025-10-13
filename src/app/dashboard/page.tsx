@@ -13,7 +13,7 @@ import {
   LogOut,
   Calendar,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/client'
@@ -31,6 +31,41 @@ export default function DashboardPage() {
   const { user, loading } = useProtectedPage()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [bots, setBots] = useState<any[]>([])
+
+  // ------- helpers for profile card -------
+  const { displayName, displayEmail, initials } = useMemo(() => {
+    const email = user?.email ?? ''
+    const meta: any = (user?.user_metadata as any) || {}
+
+    // Try common Google fields that Supabase fills
+    const nameFromMeta =
+      meta.full_name ||
+      meta.name ||
+      [meta.given_name, meta.family_name].filter(Boolean).join(' ').trim()
+
+    const fallbackName = email ? email.split('@')[0] : ''
+    const finalName = (nameFromMeta || fallbackName || '').toString()
+
+    // Build initials from name → else from email username → else "--"
+    const derivedInitials = (() => {
+      const n = finalName.trim()
+      if (n) {
+        const parts = n.split(/\s+/).slice(0, 2)
+return parts.map((p: string) => p[0]?.toUpperCase() ?? '').join('') || '--'
+      }
+      if (email) {
+        const u = email.split('@')[0]
+        return u.slice(0, 2).toUpperCase()
+      }
+      return '--'
+    })()
+
+    return {
+      displayName: finalName || '—',
+      displayEmail: email || '—',
+      initials: derivedInitials,
+    }
+  }, [user])
 
   // Load user's bots
   useEffect(() => {
@@ -145,14 +180,16 @@ export default function DashboardPage() {
           </ul>
         </nav>
 
+        {/* Profile + Logout */}
         <div className="p-4 border-t border-[#003875]">
           <div className="flex items-center space-x-3 mb-4">
             <div className="w-8 h-8 bg-[#1E90FF] rounded-full flex items-center justify-center text-sm font-medium">
-              JD
+              {initials}
             </div>
             <div>
-              <p className="text-sm font-medium">John Doe</p>
-              <p className="text-xs text-gray-400">john@company.com</p>
+              {/* These come from Google via Supabase (openid/email/profile) */}
+              <p className="text-sm font-medium">{displayName}</p>
+              <p className="text-xs text-gray-400">{displayEmail}</p>
             </div>
           </div>
           <button
