@@ -118,7 +118,7 @@ return parts.map((p: string) => p[0]?.toUpperCase() ?? '').join('') || '--'
     { icon: Bot,   label: 'Integrations', path: '/dashboard/integrations',    tourKey: 'nav-integrations' },
     { icon: Settings, label: 'Settings',  path: '/dashboard/settings',        useLink: true, tourKey: 'nav-settings' },
     { icon: Calendar, label: 'Calendar',  path: '/dashboard/calendar',        useLink: true, tourKey: 'nav-calendar' },
-    { icon: HelpCircle, label: 'Help',    path: '/dashboard',                 tourKey: 'nav-help' },
+{ icon: HelpCircle, label: 'Help', path: '/dashboard/help', useLink: true, tourKey: 'nav-help' },
   ]
 
   return (

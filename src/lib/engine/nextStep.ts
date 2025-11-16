@@ -13,13 +13,15 @@ function inferTopic(intent: string, e: Entities): string {
   const svc = (e.service || '').toLowerCase().trim();
   if (svc) return svc;
   switch (intent) {
-    case 'pricing': return 'pricing and what’s included';
-    case 'emergency': return 'urgent care and pain relief';
-    case 'hours': return 'today’s hours and earliest openings';
+    case 'pricing':  return 'pricing and what’s included';
+    case 'emergency':return 'urgent care and pain relief';
+    case 'hours':    return 'today’s hours and earliest openings';
     case 'location': return 'directions and parking';
-    case 'offer': return 'current promotions';
-    case 'booking': return 'the treatment details';
-    default: return 'treatments and prices';
+    case 'offer':    return 'current promotions';
+    case 'booking':  return 'the treatment details';
+    // (optional) we don’t actually use a topic for cancel, but adding this keeps coverage explicit
+    case 'cancel':   return 'your appointment';
+    default:         return 'treatments and prices';
   }
 }
 
@@ -29,6 +31,14 @@ export function decideNextAction(
   biz: BizContext,
   signals: Signals = {}
 ): GuardedAction {
+  // >>> MINIMAL GUARD FOR CANCEL <<<
+  // If upstream intent is "cancel", do not advance any booking/confirm steps here.
+  // Return a neutral freeform so the cancel flow helpers (already invoked earlier)
+  // can present the right CTAs and continue the cancellation process.
+  if (intent === 'cancel') {
+    return { type: 'freeform', message: '' };
+  }
+
   const pipeline = rulesForIntent(intent);
 
   const txt = (signals.rawUserText || '').trim();

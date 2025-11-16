@@ -242,6 +242,50 @@ export default function useChatLogic(botId: string) {
       return
     }
 
+    // ====== ADDED: direct open when cancel context + "Open calendar" CTA ======
+    const cancelViaCalendarContext =
+      /(?:cancel|cancel or reschedule|appointment manager|manage (?:my|the) appointment)/i.test(lastBotText) &&
+      /calendar/i.test(lastBotText)
+
+    if ((userMessage === 'Open calendar' || userMessage === 'open_calendar') &&
+        (pendingCalendarLink || calendarUrl || cancelViaCalendarContext)) {
+      const iframeLink = pendingCalendarLink || calendarUrl
+      setIsTyping(true)
+      try {
+        if (iframeLink) {
+          setMessages(prev => [...prev, { sender: 'bot', text: '', iframe: iframeLink }])
+        }
+        // Optional: log action
+        const formattedHistory = messages
+          .filter(m => m.sender === 'user' || m.sender === 'bot')
+          .map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
+        const session = await supabase.auth.getSession()
+        const accessToken = session.data.session?.access_token
+        await axios.post(
+          '/api/chat',
+          {
+            question: 'open_calendar',
+            user_id: botId,
+            history: formattedHistory,
+            user_auth_id: user?.id || null,
+            conversation_id: conversationId,
+            is_after_hours: isBusinessClosed,
+            force_embed: true,
+            debug: DEBUG,
+          },
+          { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined }
+        )
+      } catch (_e) {
+        // ignore logging errors
+      } finally {
+        setPendingCalendarLink('')
+        setPendingUserMsg('')
+        setIsTyping(false)
+      }
+      return
+    }
+    // ====== END ADDED ======
+
     setIsTyping(true)
     try {
       const formattedHistory = messages

@@ -10,6 +10,7 @@ export type Intent =
   | 'location'
   | 'offer'
   | 'faq'
+  | 'cancel'       // added
   | 'unknown';
 
 export type Entities = {
@@ -34,6 +35,10 @@ const OFFER_WORDS = ['offer', 'deal', 'discount', 'promotion', 'special'];
 const PRICE_WORDS = ['price', 'pricing', 'cost', 'how much', 'fee', 'payment', 'quote', 'estimate'];
 const HOUR_WORDS  = ['hour', 'hours', 'open', 'close', 'closing', 'opening', 'today'];
 const LOC_WORDS   = ['where', 'address', 'location', 'near', 'nearby', 'map', 'direction', 'directions'];
+
+// Robust cancel phrases (prefer cancel over booking/reschedule)
+const CANCEL_RE =
+  /\b(cancel|cancellation|canceling|cancelled|call off|call it off|stop|won'?t make it|can't make it|cannot make it|no longer (?:coming|able to come)|remove (?:my )?(?:booking|appointment)|delete (?:my )?(?:booking|appointment)|void (?:the )?appointment|drop (?:the )?appointment)\b/i;
 
 const AFFIRM_WORDS =
   /\b(yes|yeah|yep|sure|ok|okay|sounds good|please|go ahead|do it|confirm|let'?s|proceed)\b/i;
@@ -73,6 +78,11 @@ export function detectIntent(userText: string, opts: DetectOpts = {}): Intent {
 
   const hasTimeLike = entities.timeLike.length > 0;
 
+  // --- HARD PRIORITY: cancel beats everything else ---
+  if (CANCEL_RE.test(t)) {
+    return 'cancel';
+  }
+
   // --- base keyword detection ---
   if (/(book|booking|schedule|appointment|availability|slot|reserve)/i.test(t) || hasTimeLike) {
     return 'booking';
@@ -91,10 +101,27 @@ export function detectIntent(userText: string, opts: DetectOpts = {}): Intent {
   if (opts.lastAssistantText) {
     const a = opts.lastAssistantText.toLowerCase();
 
+    // If the last assistant message offered cancel/reschedule via calendar,
+    // and the user clicks/types "open calendar", keep intent = cancel.
+    const offeredCancelViaCalendar =
+      /\b(cancel|cancel or reschedule|appointment manager|manage (?:my|the) appointment)\b/.test(a) &&
+      /\bcalendar\b/.test(a);
+
+    if (offeredCancelViaCalendar && (/\bopen\b.*\bcalendar\b/i.test(t) || /\bopen_calendar\b/.test(t))) {
+      return 'cancel';
+    }
+
+    // Assistant discussing cancel continuation?
+    const assistantOfferedCancel =
+      /\b(cancel|cancellation|confirm cancellation|enter (?:your )?email to cancel|use code to cancel|cancel your appointment)\b/i.test(a);
+
     // Did the assistant offer booking or a consult?
     const assistantOfferedBooking =
       /\b(book|schedule|appointment|calendar|pick(?:\s+a)?\s+time|choose\s+a\s+time|select\s+(?:a\s+)?(time|date)|reserve\s+(?:a\s+)?(slot|time)|set\s+up\s+(?:a\s+)?(consultation|visit|appointment)|arrange\s+(?:a\s+)?(time|visit)|get\s+you\s+(in|scheduled)|proceed)\b/i
         .test(a);
+
+    // If user affirmed after cancel prompt → cancel.
+    if (userAffirmation && assistantOfferedCancel) return 'cancel';
 
     // If they gave a time and the assistant was discussing timing, treat as booking.
     const assistantAskedTiming =

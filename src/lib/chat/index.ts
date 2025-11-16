@@ -251,18 +251,19 @@ export async function orchestrateChat({
     rawUserText: meaningfulUserText || userLast
   });
 
+  // === NEW: unify booking-like intents (booking/reschedule/cancel)
+  const bookingLike = ['booking', 'reschedule', 'cancel'].includes(String(intentForAction));
+
   // ---- BOOKING SHORT-CIRCUIT (must run before any KB/LLM) ----
   const bookingNow =
-    intentForAction === 'booking' ||
+    bookingLike ||
     bookingFlags?.strongBookingNow ||
     bookingFlags?.bookingYes ||
     bookingFlags?.userAskedToOpen;
 
   if (bookingNow) {
-    // If rules didn’t already choose a booking step, force a confirm
-    if (!action || (action.type !== 'confirm' && action.type !== 'open_calendar')) {
-      action = { type: 'confirm', message: 'Would you like to see available times now?' } as any;
-    }
+    // Force iframe immediately (no confirm, no capture)
+    action = { type: 'open_calendar', message: '' } as any;
   }
 
   // --- debug: context & booking ---
@@ -279,6 +280,8 @@ export async function orchestrateChat({
   // --- capture-related context (MOVE ABOVE KB FALLBACK) ---
   const saidYes = /\b(yes|yeah|yep|sure|ok|okay|please)\b/i.test(userLast);
   const saidNo  = /\b(no|nah|nope|not now|later|maybe)\b/i.test(userLast);
+  const containsBookingWords = /\b(book|appointment|calendar|schedule|slot|reserve|time|show times|open (?:the )?calendar)\b/i.test(userLast);
+  const isBareAffirmation = /^(yes|yeah|yep|sure|ok|okay)$/i.test(userLast.trim());
 
   // broaden detection to include “please provide your name”
   const lastAskedName  = /(?:your name|put this under your name|can i take your name|what'?s your name|what name should i (?:use|put (?:this )?under)|(?:could you )?please provide (?:your )?name)/i
@@ -315,6 +318,9 @@ export async function orchestrateChat({
   const shareEmailCTA = /\b(share my email|send my email|provide my email|give you my email)\b/i.test(userLast);
   const skipEmailCTA  = /\b(skip|not now|no thanks?)\b/i.test(userLast);
 
+  // *** define once (fixes TS2451) ***
+  const hasEmailOrPhoneNow = !!(combinedEmail || (entities as any).phone);
+
   // debug: capture detectors & signals
   dbg(reqId, 'capture.serverSide', {
     askedNameSrv,
@@ -339,8 +345,11 @@ export async function orchestrateChat({
     everProvidedEmail,
   });
 
+  // === compute here so we can gate fallback ask ===
+  const assistantTurnsSoFar = recentHistory.filter(({ role }) => role === 'assistant').length;
+
   // --- KB FALLBACK MUST NOT BLOCK BOOKING OR CAPTURE CONTINUATIONS ---
-  if (!kbHasCoverage && !(action && (action.type === 'confirm' || action.type === 'open_calendar'))) {
+  if (!kbHasCoverage && !(action && (action.type === 'confirm' || action.type === 'open_calendar')) && !bookingLike) {
     const justGaveName =
       (lastAskedName || _askedNameLast || askedNameBefore) &&
       resolvedName && isLikelyRealName(resolvedName) &&
@@ -358,22 +367,37 @@ export async function orchestrateChat({
 
     const text = pickTemplate(String(intentForAction || ''), biz);
     const lowIntentInfoLocal = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
-    const assistantText = lowIntentInfoLocal ? `${text}\n\nCan I take your name to tailor this for you?` : text;
-    dbg(reqId, 'branch.KB_FALLBACK', { lowIntentInfoLocal, intentForAction });
+
+    // **Only ask for name in fallback if: info turn, not first reply, no prior name, no prior ask, not booking words, and not a bare "yes".**
+    const shouldAskNameFallback =
+      lowIntentInfoLocal &&
+      assistantTurnsSoFar >= 1 &&
+      !(resolvedName || hadNameBefore) &&
+      !askedNameBefore &&
+      !lastAskedName &&
+      !containsBookingWords &&
+      !isBareAffirmation;
+
+    const assistantText = shouldAskNameFallback
+      ? `${text}\n\nCan I take your name to tailor this for you?`
+      : text;
+
+    dbg(reqId, 'branch.KB_FALLBACK', { lowIntentInfoLocal, intentForAction, shouldAskNameFallback });
     return respondAndLog(
       admin,
       { botId, conversation_id, user_auth_id, userLast: question, assistantText, intent: String(intentForAction ?? '') },
-      lowIntentInfoLocal
+      shouldAskNameFallback
         ? { answer: assistantText, ctas: [{ id: 'lead_name_yes', label: 'Yes' }, { id: 'lead_name_no', label: 'No' }] }
         : { answer: assistantText }
     );
   }
 
   // quick capture yes/no branches (now safe; KB fallback has been handled above)
-  // UPDATED: accept _askedNameLast as a valid trigger too
-  if ((lastAskedName || _askedNameLast) && (saidYes || saidNo) && !resolvedName) {
-    const assistantText = saidYes ? 'Great—what’s your name?' : 'No problem—let’s continue. What would you like to know next?';
-    dbg(reqId, 'branch.NAME_YES_NO_WITHOUT_NAME', { saidYes, saidNo, lastAskedName, _askedNameLast, resolvedName });
+  // Only trigger if the immediately previous bot turn asked for name,
+  // reply is a bare affirmation (or an explicit no), and no booking words.
+  if ((lastAskedName || _askedNameLast) && ((isBareAffirmation) || saidNo) && !resolvedName && !containsBookingWords) {
+    const assistantText = isBareAffirmation ? 'Great—what’s your name?' : 'No problem—let’s continue. What would you like to know next?';
+    dbg(reqId, 'branch.NAME_YES_NO_WITHOUT_NAME', { isBareAffirmation, saidNo, lastAskedName, _askedNameLast, containsBookingWords, resolvedName });
     return respondAndLog(admin, { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? intent ?? '') }, { answer: assistantText });
   }
 
@@ -414,7 +438,6 @@ export async function orchestrateChat({
 
   // email-turn lead save
   const alreadyConfirmed = Array.isArray(history) && history.some(({ content }: any) => /you'?re all set|all set, .*saved your email/i.test(String(content || '')));
-  const hasEmailOrPhoneNow = !!(combinedEmail || (entities as any).phone);
   if ((_askedEmailLast || lastAskedEmail || askedEmailBefore) && isEmail(userLast) && (alreadyConfirmed || hasEmailOrPhoneNow)) {
     dbg(reqId, 'branch.EMAIL_CONFIRM_SAVE', { _askedEmailLast, lastAskedEmail, askedEmailBefore, isEmailTurn: isEmail(userLast), alreadyConfirmed, hasEmailOrPhoneNow });
     await saveEmailTurnLead({ admin, req, botId, conversation_id, user_auth_id, userLast, resolvedName, recentHistory });
@@ -423,8 +446,10 @@ export async function orchestrateChat({
   }
 
   // ask for name before opening calendar — also respect prior captures
+  // === IMPORTANT: never ask name/email on booking-like turns
   if (
     ((action as any)?.type === 'confirm' || (action as any)?.type === 'open_calendar') &&
+    !bookingLike &&
     !(resolvedName || hadNameBefore) &&
     !(combinedEmail || everProvidedEmail) &&
     !askedNameBefore &&
@@ -515,13 +540,12 @@ export async function orchestrateChat({
   let finalAnswer = resp.choices[0]?.message?.content?.trim() || String(action.message || '');
 
   // anti-booking early (do NOT suppress on real booking turns)
-  const assistantTurnsSoFar = recentHistory.filter(({ role }) => role === 'assistant').length;
   const lowIntentInfo = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
   const allowLeadCapture =
     !declinedNameSinceAsk(recentHistory as any, lastNameAskIndex(recentHistory as any));
 
   const bookingNow2 =
-    intentForAction === 'booking' ||
+    bookingLike ||
     bookingFlags?.strongBookingNow ||
     bookingFlags?.bookingYes ||
     bookingFlags?.userAskedToOpen;
@@ -533,7 +557,7 @@ export async function orchestrateChat({
     finalAnswer = stripped || finalAnswer;
   }
 
-  // post-answer capture nudges
+  // post-answer capture nudges — never on booking-like turns
   const askRegex = /(?:can i take your name|what'?s your name|what name should i (?:use|put (?:this )?under)|your email|best email|share email|get your email)/i;
   const captureAsks = Array.isArray(recentHistory)
     ? (recentHistory as any).filter((m: any) => m?.role === 'assistant' && askRegex.test(String(m?.content || ''))).length
@@ -548,12 +572,13 @@ export async function orchestrateChat({
     history.some(({ content }: any) => /\b(calendar|appointment|schedule|book)\b/i.test(String(content || '')));
 
   const hasNameNow = !!resolvedName;
-  // reuse previously computed hasEmailOrPhoneNow; do NOT redeclare
+  // use hasEmailOrPhoneNow defined earlier
 
-  if (canAskNow && !everBookingFlow2 && lowIntentInfo) {
-    if (!hasNameNow) {
+  if (canAskNow && !everBookingFlow2 && lowIntentInfo && !bookingLike) {
+    // ask for name nudge only if user has seen at least one assistant turn, no prior ask, not a bare "yes"
+    if (!hasNameNow && assistantTurnsSoFar >= 1 && !askedNameBefore && !lastAskedName && !isBareAffirmation) {
       const assistantText = `${finalAnswer}\n\nCan I take your name to tailor this for you?`;
-      dbg(reqId, 'branch.NUDGE_ASK_NAME', { canAskNow, everBookingFlow2, lowIntentInfo, hasNameNow });
+      dbg(reqId, 'branch.NUDGE_ASK_NAME', { canAskNow, everBookingFlow2, lowIntentInfo, hasNameNow, assistantTurnsSoFar });
       return respondAndLog(
         admin,
         { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? '') },

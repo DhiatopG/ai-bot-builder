@@ -36,11 +36,11 @@ export async function handleCancelCTA({
   const apptId = parseCancelId(userLast);
   if (!apptId) {
     const assistantText = 'Opening your appointment manager…';
-    // Push iframe immediately
+    // Push calendar immediately via consistent CTA id
     return respondAndLog(
       admin,
       { botId, conversation_id: convId, user_auth_id, userLast, assistantText, intent: 'cancel' },
-      { answer: assistantText, ctas: [{ id: 'open_calendar_now', label: 'Manage my appointment' }] }
+      { answer: assistantText, ctas: [{ id: 'open_calendar', label: 'Manage my appointment' }] }
     );
   }
 
@@ -60,7 +60,7 @@ export async function handleCancelCTA({
     return respondAndLog(
       admin,
       { botId, conversation_id: convId, user_auth_id, userLast, assistantText, intent: 'cancel' },
-      { answer: assistantText, ctas: [{ id: 'open_calendar_now', label: 'Open calendar' }] }
+      { answer: assistantText, ctas: [{ id: 'open_calendar', label: 'Open calendar' }] }
     );
   } catch {
     const assistantText =
@@ -68,7 +68,7 @@ export async function handleCancelCTA({
     return respondAndLog(
       admin,
       { botId, conversation_id: convId, user_auth_id, userLast, assistantText, intent: 'cancel' },
-      { answer: assistantText, ctas: [{ id: 'open_calendar_now', label: 'Open calendar' }] }
+      { answer: assistantText, ctas: [{ id: 'open_calendar', label: 'Open calendar' }] }
     );
   }
 }
@@ -95,7 +95,7 @@ export async function maybeOfferCancelButtons({
   return respondAndLog(
     admin,
     { botId, conversation_id: convId, user_auth_id, userLast, assistantText, intent: 'cancel' },
-    { answer: assistantText, ctas: [{ id: 'open_calendar_now', label: 'Open calendar' }] }
+    { answer: assistantText, ctas: [{ id: 'open_calendar', label: 'Open calendar' }] }
   );
 }
 

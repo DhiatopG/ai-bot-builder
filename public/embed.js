@@ -1,5 +1,6 @@
 /* eslint-env browser, es2020 */
 /* eslint no-empty: ["error", { "allowEmptyCatch": true }] */
+/* global fetch */
 
 (function () {
   if (window.__in60Mounted) return;
@@ -30,6 +31,12 @@
   var bubbleColor = scriptEl.getAttribute('data-bubble-color') || '#2563eb';
   var bubbleText  = scriptEl.getAttribute('data-bubble-text') || '';
   var openOnLoad  = (scriptEl.getAttribute('data-open') || '').toLowerCase() === 'true';
+
+  // ---------- NEW: dynamic bubble branding defaults ----------
+  // These will be populated from your backend config endpoint.
+  var logoUrl   = '';     // string URL of logo (public)
+  var bubbleTyp = 'icon'; // 'logo' | 'icon' (default icon unless API says otherwise)
+  var logoRing  = true;   // thin border around very light logos (can be toggled by API)
 
   var isLeft  = position.includes('left');
   var posXKey = isLeft ? 'left' : 'right';
@@ -180,11 +187,30 @@
     btn.setAttribute('role', 'button');
     btn.setAttribute('tabindex', '0');
     btn.setAttribute('aria-label', 'Open chat');
-    btn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M21 12a8.5 8.5 0 1 1-3.1-6.6l.1.1A8.1 8.1 0 0 1 21 12ZM7.5 13h9M7.5 10h9"
-              stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>`;
+
+    // ---------- NEW: dynamic logo vs default icon ----------
+    if (bubbleTyp === 'logo' && logoUrl) {
+      // Show client logo instead of blue circle
+      setImp(btn, 'background', 'transparent');
+      setImp(btn, 'background-image', 'url(' + logoUrl + ')');
+      setImp(btn, 'background-size', 'cover');
+      setImp(btn, 'background-position', 'center');
+      setImp(btn, 'background-repeat', 'no-repeat');
+      if (logoRing) {
+        setImp(btn, 'border', '1px solid rgba(0,0,0,.08)');
+        setImp(btn, 'box-shadow', '0 10px 30px rgba(0,0,0,.2)');
+      }
+      btn.innerHTML = '';
+      setImp(btn, 'color', 'transparent');
+    } else {
+      // default: blue circle with chat icon
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M21 12a8.5 8.5 0 1 1-3.1-6.6l.1.1A8.1 8.1 0 0 1 21 12ZM7.5 13h9M7.5 10h9"
+                stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>`;
+    }
+
     document.body.appendChild(btn);
     bubble = btn;
     bindBubbleHandlers();
@@ -470,6 +496,28 @@
   function onPageHide(){ destroy(); }
   function onBeforeUnload(){ destroy(); }
 
+  // ---------- NEW: load branding from backend ----------
+  async function loadBranding() {
+    try {
+      // Adjust the path if your public config endpoint differs
+      var url = origin + '/api/embed-config?bot_id=' + encodeURIComponent(botId);
+      var res = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+      if (!res.ok) return;
+      var cfg = await res.json();
+
+      // Minimal expected shape:
+      // { logo_url?: string, bubble_style?: 'logo'|'icon', logo_ring?: boolean }
+      if (cfg && typeof cfg === 'object') {
+        if (typeof cfg.logo_url === 'string' && cfg.logo_url) {
+          logoUrl = cfg.logo_url;
+          bubbleTyp = 'logo';
+        }
+        if (cfg.bubble_style === 'icon') bubbleTyp = 'icon';
+        if (typeof cfg.logo_ring === 'boolean') logoRing = cfg.logo_ring;
+      }
+    } catch {}
+  }
+
   // ---------- public API ----------
   window.In60 = {
     open: openPanel,
@@ -479,11 +527,13 @@
     isOpen: function(){ return !!isOpen; }
   };
 
-  // ---------- mount ----------
+  // ---------- mount (load branding first, then render) ----------
   injectStyle();
-  ensureBubble();
-  if (openOnLoad) openPanel();
-  startObserver();
+  loadBranding().finally(function () {
+    ensureBubble();
+    if (openOnLoad) openPanel();
+    startObserver();
+  });
 
   // ---------- listeners ----------
   ['click','pointerdown','pointerup','mousedown','mouseup','touchstart','touchend']

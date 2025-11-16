@@ -133,8 +133,11 @@ export default function CreateBotPage() {
   }, [router])
 
   const handleLaunch = async () => {
-    if (!botName || !description || !questions || !answers) {
-      toast.error('❌ Please fill in all required fields before launching a bot.')
+    // ✅ NEW VALIDATION: only require bot name + at least one website URL
+    const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
+
+    if (!botName.trim() || urlList.length === 0) {
+      toast.error('Bot name and at least one website URL are required')
       return
     }
 
@@ -163,11 +166,10 @@ export default function CreateBotPage() {
       finalLogoUrl = publicUrlData?.publicUrl || null
     }
 
-    const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
     const qaPairs = questions
       .split('?')
       .map((q, i) => ({
-        question: q.trim() + '?',
+        question: q.trim() ? `${q.trim()}?` : '',
         answer: answers.split(',')[i]?.trim() || '',
       }))
       .filter((pair) => pair.question.length > 1)
@@ -177,7 +179,7 @@ export default function CreateBotPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId,
-        botName,
+        botName: botName.trim(),
         businessInfo: { urls: urlList, description },
         qaPairs,
         logoUrl: finalLogoUrl,
@@ -214,13 +216,47 @@ export default function CreateBotPage() {
   return (
     <main className="max-w-2xl mx-auto p-6 space-y-6">
       <h2 className="text-xl font-bold">Quick Launch</h2>
-      <input type="text" placeholder="Bot Name" className="border p-3 w-full rounded" value={botName} onChange={(e) => setBotName(e.target.value)} />
-      <textarea placeholder="Website URLs (one per line)" className="border p-3 w-full rounded" value={urls} onChange={(e) => setUrls(e.target.value)} />
-      <textarea placeholder="Bot Description" className="border p-3 w-full rounded" value={description} onChange={(e) => setDescription(e.target.value)} />
-      <textarea placeholder="Questions (Q1? Q2?...)" className="border p-3 w-full rounded" value={questions} onChange={(e) => setQuestions(e.target.value)} />
-      <textarea placeholder="Answers (A1, A2,...)" className="border p-3 w-full rounded" value={answers} onChange={(e) => setAnswers(e.target.value)} />
-      <input type="file" accept="image/*" className="border p-3 w-full rounded" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-      <button onClick={handleLaunch} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 w-full">
+      <input
+        type="text"
+        placeholder="Bot Name"
+        className="border p-3 w-full rounded"
+        value={botName}
+        onChange={(e) => setBotName(e.target.value)}
+      />
+      <textarea
+        placeholder="Website URLs (one per line)"
+        className="border p-3 w-full rounded"
+        value={urls}
+        onChange={(e) => setUrls(e.target.value)}
+      />
+      <textarea
+        placeholder="Bot Description"
+        className="border p-3 w-full rounded"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+      />
+      <textarea
+        placeholder="Questions (Q1? Q2?...)"
+        className="border p-3 w-full rounded"
+        value={questions}
+        onChange={(e) => setQuestions(e.target.value)}
+      />
+      <textarea
+        placeholder="Answers (A1, A2,...)"
+        className="border p-3 w-full rounded"
+        value={answers}
+        onChange={(e) => setAnswers(e.target.value)}
+      />
+      <input
+        type="file"
+        accept="image/*"
+        className="border p-3 w-full rounded"
+        onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+      />
+      <button
+        onClick={handleLaunch}
+        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 w-full"
+      >
         Launch in 60 Seconds
       </button>
     </main>
