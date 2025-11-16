@@ -122,15 +122,23 @@ export default function PricingPage() {
         </Link>
       </div>
 
+      {/* Hero */}
       <section className="py-20 px-4 bg-white">
         <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 text-blue-900">Yo. Here&apos;s the Deal.</h1>
+          <h1 className="text-5xl md:text-7xl font-bold mb-6 text-blue-900">
+            Yo. Here&apos;s the Deal.
+          </h1>
           <div className="text-xl md:text-2xl leading-relaxed mb-8 text-blue-700">
             <p className="mb-4">You&apos;re bleeding leads.</p>
             <p className="mb-4">Your site looks slick, but it doesn&apos;t talk.</p>
+            <p className="mb-4">
+              In60second fixes that — by chatting, converting, and capturing leads while you&apos;re
+              off doing bigger things.
+            </p>
+            {/* extra line just for SEO clarity, same tone */}
             <p className="mb-6">
-              In60second fixes that — by chatting, converting, and capturing leads while you&apos;re off doing bigger
-              things.
+              Under the hood, it&apos;s an AI assistant / AI receptionist that lives on your
+              website, answers visitors 24/7, and sends you qualified leads.
             </p>
           </div>
           <p className="text-blue-600 mb-8">Try it free. No credit card. No strings.</p>
@@ -146,12 +154,16 @@ export default function PricingPage() {
       <section className="py-20 px-4 bg-blue-50">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-8">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4 text-blue-900">Choose Your Weapon</h2>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4 text-blue-900">
+              Choose Your Weapon
+            </h2>
             <p className="text-xl text-blue-700">Pick the plan that fits your hustle</p>
 
             {/* Monthly / Annual toggle */}
             <div className="mt-6 flex justify-center items-center gap-3">
-              <span className={!annual ? 'font-semibold text-blue-900' : 'text-blue-700'}>Monthly</span>
+              <span className={!annual ? 'font-semibold text-blue-900' : 'text-blue-700'}>
+                Monthly
+              </span>
               <button
                 onClick={() => setAnnual((a) => !a)}
                 className="relative inline-flex items-center h-8 w-16 rounded-full border border-blue-300 bg-white"
@@ -163,7 +175,9 @@ export default function PricingPage() {
                   }`}
                 />
               </button>
-              <span className={annual ? 'font-semibold text-blue-900' : 'text-blue-700'}>Annual</span>
+              <span className={annual ? 'font-semibold text-blue-900' : 'text-blue-700'}>
+                Annual
+              </span>
               {annual && <span className="text-sm text-blue-700 ml-2">(2 months free)</span>}
             </div>
           </div>
@@ -261,14 +275,16 @@ export default function PricingPage() {
           </p>
           {/* MoR note */}
           <p className="mt-2 text-center text-sm text-blue-600">
-            Payments are processed by FastSpring (authorized reseller & Merchant of Record).
+            Payments are processed by FastSpring (authorized reseller &amp; Merchant of Record).
           </p>
         </div>
       </section>
 
       <section className="py-20 px-4 bg-blue-50">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl md:text-5xl font-bold mb-6 text-blue-900">Try it free for 7 days.</h2>
+          <h2 className="text-4xl md:text-5xl font-bold mb-6 text-blue-900">
+            Try it free for 7 days.
+          </h2>
           <div className="space-y-2 text-xl text-blue-700 mb-8">
             <p>No card.</p>
             <p>No commitment.</p>
