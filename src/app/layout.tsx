@@ -6,15 +6,12 @@ import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   // Browser tab + default page title
-  title: {
-    default: 'AI Receptionist for Dentists | In60second',
-    template: '%s | In60second',
-  },
+  title: 'AI Receptionist for Dentists | In60second',
   description:
     'In60second is an AI receptionist for dentists that answers patients 24/7, books appointments, sends reminders, and reduces no-shows.',
 
-  // Helps Next.js build absolute URLs
-  metadataBase: new URL('https://www.in60second.net'),
+  // Helps Next.js build absolute URLs for OG, canonicals, etc.
+  metadataBase: new URL('https://in60second.net'),
 
   // Open Graph (Facebook, LinkedIn, WhatsApp previews)
   openGraph: {
@@ -24,7 +21,7 @@ export const metadata: Metadata = {
     url: '/',
     siteName: 'In60second',
     type: 'website',
-    // When you add an OG image in /public, uncomment this:
+    // When you add an OG image in /public, uncomment this and change the file name:
     // images: ['/og-in60second.jpg'],
   },
 }
