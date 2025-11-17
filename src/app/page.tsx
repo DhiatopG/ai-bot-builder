@@ -141,14 +141,15 @@ export default function HomePage() {
         >
           <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-600 px-4 py-2 rounded-full text-sm font-medium mb-8">
             <Zap className="w-4 h-4" />
-            Dental AI Front Desk
+            AI Dental Receptionist for Dentists
           </div>
           <h1 className="text-4xl md:text-6xl font-bold text-blue-900 mb-6">
-            Turn your dental website into a 24/7 front desk that books patients
+            AI Dental Receptionist That Stops Missed Calls and No-Shows
           </h1>
           <p className="text-lg md:text-xl text-blue-700 mb-8">
-            Answer insurance questions, pre-qualify new-patient leads, and hand off to your front
-            desk without adding front-desk hours.
+            Our AI dental receptionist acts like a 24/7 answering service for dentists — answering
+            insurance questions, pre-qualifying new-patient leads, and handing off to your front
+            desk so your practice reduces no-shows without adding front-desk hours.
           </p>
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-12">
             <button
@@ -182,10 +183,11 @@ export default function HomePage() {
       <section id="features" className="py-20 px-4 bg-blue-50">
         <div className="max-w-6xl mx-auto text-center">
           <h2 className="text-4xl md:text-5xl font-bold text-blue-900 mb-4">
-            Built for Busy Dental Practices
+            AI Dental Receptionist Built for Busy Dental Practices
           </h2>
           <p className="text-xl text-blue-700 mb-12">
-            From insurance questions to whitening consults, everything runs smoother.
+            From insurance questions to whitening consults, your 24/7 answering service for dentists
+            helps reduce missed calls and no-shows while everything runs smoother.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((f, i) => (
@@ -206,9 +208,11 @@ export default function HomePage() {
       <section id="testimonials" className="py-20 px-4 bg-white">
         <div className="max-w-6xl mx-auto text-center">
           <h2 className="text-4xl md:text-5xl font-bold text-blue-900 mb-4">
-            Trusted by Dental Professionals
+            What Dentists Say About Our AI Dental Receptionist
           </h2>
-          <p className="text-xl text-blue-700 mb-12">Real outcomes from real practices</p>
+          <p className="text-xl text-blue-700 mb-12">
+            Real outcomes from real practices using AI to reduce no-shows and missed calls
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {testimonials.map((t, i) => (
               <div
@@ -252,10 +256,13 @@ export default function HomePage() {
       {/* CTA */}
       <section className="py-20 px-4 bg-blue-50 text-center">
         <h2 className="text-4xl md:text-5xl font-bold text-blue-900 mb-6">
-          Try it free for 7 days.
+          Get Your AI Dental Receptionist Live in 60 Seconds
         </h2>
         <p className="text-xl text-blue-700 mb-2">No card. No commitment.</p>
-        <p className="text-xl text-blue-700 mb-6">Live on your site in minutes.</p>
+        <p className="text-xl text-blue-700 mb-6">
+          Turn your dental website into a 24/7 answering service and start reducing no-shows this
+          week.
+        </p>
         <div className="text-4xl mb-6">👇</div>
         <button
           onClick={() => router.push('/login')}

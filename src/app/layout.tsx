@@ -6,18 +6,28 @@ import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   // Browser tab + default page title
-  title: 'AI Receptionist for Dentists | In60second',
+  title: 'In60second | AI Dental Receptionist & 24/7 Answering Service for Dentists',
   description:
-    'In60second is an AI receptionist for dentists that answers patients 24/7, books appointments, sends reminders, and reduces no-shows.',
+    'In60second is an AI dental receptionist and 24/7 answering service for dentists that answers patients, books appointments, sends reminders, and helps reduce no-shows.',
+
+  // Optional but nice to have
+  keywords: [
+    'AI dental receptionist',
+    '24/7 answering service for dentists',
+    'reduce no-shows dental practice',
+    'dental chatbot for website',
+    'missed calls dental office',
+    'In60second',
+  ],
 
   // Helps Next.js build absolute URLs for OG, canonicals, etc.
   metadataBase: new URL('https://in60second.net'),
 
   // Open Graph (Facebook, LinkedIn, WhatsApp previews)
   openGraph: {
-    title: 'AI Receptionist for Dentists | In60second',
+    title: 'In60second | AI Dental Receptionist & 24/7 Answering Service for Dentists',
     description:
-      'Turn your dental website into a 24/7 AI receptionist that books, confirms, and follows up with patients automatically.',
+      'Turn your dental website into a 24/7 AI dental receptionist that answers patients, books and confirms appointments, and reduces no-shows automatically.',
     url: '/',
     siteName: 'In60second',
     type: 'website',
