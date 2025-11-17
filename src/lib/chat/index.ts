@@ -254,6 +254,9 @@ export async function orchestrateChat({
   // === NEW: unify booking-like intents (booking/reschedule/cancel)
   const bookingLike = ['booking', 'reschedule', 'cancel'].includes(String(intentForAction));
 
+  // NEW — classify "low intent info" intents ONCE (no 'unknown' here so unknown goes to GPT, not template)
+  const lowIntentInfo = ['general','services','pricing','hours','insurance','faq'].includes(String(intentForAction));
+
   // ---- BOOKING SHORT-CIRCUIT (must run before any KB/LLM) ----
   const bookingNow =
     bookingLike ||
@@ -349,7 +352,8 @@ export async function orchestrateChat({
   const assistantTurnsSoFar = recentHistory.filter(({ role }) => role === 'assistant').length;
 
   // --- KB FALLBACK MUST NOT BLOCK BOOKING OR CAPTURE CONTINUATIONS ---
-  if (!kbHasCoverage && !(action && (action.type === 'confirm' || action.type === 'open_calendar')) && !bookingLike) {
+  // UPDATED: only use template fallback for "info" intents (services/pricing/hours/etc.), not unknown/small-talk/insults
+  if (!kbHasCoverage && lowIntentInfo && !(action && (action.type === 'confirm' || action.type === 'open_calendar')) && !bookingLike) {
     const justGaveName =
       (lastAskedName || _askedNameLast || askedNameBefore) &&
       resolvedName && isLikelyRealName(resolvedName) &&
@@ -366,11 +370,10 @@ export async function orchestrateChat({
     }
 
     const text = pickTemplate(String(intentForAction || ''), biz);
-    const lowIntentInfoLocal = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
 
     // **Only ask for name in fallback if: info turn, not first reply, no prior name, no prior ask, not booking words, and not a bare "yes".**
     const shouldAskNameFallback =
-      lowIntentInfoLocal &&
+      lowIntentInfo &&
       assistantTurnsSoFar >= 1 &&
       !(resolvedName || hadNameBefore) &&
       !askedNameBefore &&
@@ -382,7 +385,7 @@ export async function orchestrateChat({
       ? `${text}\n\nCan I take your name to tailor this for you?`
       : text;
 
-    dbg(reqId, 'branch.KB_FALLBACK', { lowIntentInfoLocal, intentForAction, shouldAskNameFallback });
+    dbg(reqId, 'branch.KB_FALLBACK', { lowIntentInfo, intentForAction, shouldAskNameFallback });
     return respondAndLog(
       admin,
       { botId, conversation_id, user_auth_id, userLast: question, assistantText, intent: String(intentForAction ?? '') },
@@ -392,13 +395,24 @@ export async function orchestrateChat({
     );
   }
 
-  // quick capture yes/no branches (now safe; KB fallback has been handled above)
+  // quick capture branch:
   // Only trigger if the immediately previous bot turn asked for name,
-  // reply is a bare affirmation (or an explicit no), and no booking words.
-  if ((lastAskedName || _askedNameLast) && ((isBareAffirmation) || saidNo) && !resolvedName && !containsBookingWords) {
-    const assistantText = isBareAffirmation ? 'Great—what’s your name?' : 'No problem—let’s continue. What would you like to know next?';
-    dbg(reqId, 'branch.NAME_YES_NO_WITHOUT_NAME', { isBareAffirmation, saidNo, lastAskedName, _askedNameLast, containsBookingWords, resolvedName });
-    return respondAndLog(admin, { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? intent ?? '') }, { answer: assistantText });
+  // reply is a bare affirmation (YES), and no booking words.
+  if ((lastAskedName || _askedNameLast) && isBareAffirmation && !resolvedName && !containsBookingWords) {
+    const assistantText = 'Great—what’s your name?';
+    dbg(reqId, 'branch.NAME_YES_NO_WITHOUT_NAME', {
+      isBareAffirmation,
+      saidNo,
+      lastAskedName,
+      _askedNameLast,
+      containsBookingWords,
+      resolvedName,
+    });
+    return respondAndLog(
+      admin,
+      { botId, conversation_id, user_auth_id, userLast, assistantText, intent: String(intentForAction ?? intent ?? '') },
+      { answer: assistantText }
+    );
   }
 
   // Email CTA short-circuit
@@ -524,7 +538,9 @@ export async function orchestrateChat({
     suppressBookingAfterDoneInstruction: '',
     afterHours: (!biz.isOpenNow && !bookingFlags.bookingNo),
     calendarAlreadyShown: false,
-    bookingCompleted: false
+    bookingCompleted: false,
+    // NEW — let GPT auto-detect EN/FR based on user messages
+    preferredLanguage: 'auto',
   });
 
   const system: ChatCompletionMessageParam = { role: 'system', content: systemPrompt };
@@ -536,11 +552,24 @@ export async function orchestrateChat({
     ? [system, knowledgeMsg, ...(recentHistory as any), userMsg, { role: 'assistant', content: action.message }]
     : [system, knowledgeMsg, ...(recentHistory as any), userMsg];
 
+  // NEW — debug LLM input
+  dbg(reqId, 'llm.request', {
+    model: 'gpt-4o-mini',
+    intentForAction,
+    userLast,
+    messagesCount: messages.length,
+    systemPreview: systemPrompt.slice(0, 400),
+  });
+
   const resp = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages, temperature: 0.3 });
   let finalAnswer = resp.choices[0]?.message?.content?.trim() || String(action.message || '');
 
+  // NEW — debug LLM output
+  dbg(reqId, 'llm.response', {
+    answerPreview: (finalAnswer || '').slice(0, 200),
+  });
+
   // anti-booking early (do NOT suppress on real booking turns)
-  const lowIntentInfo = ['general','services','pricing','hours','insurance','faq','unknown'].includes(String(intentForAction));
   const allowLeadCapture =
     !declinedNameSinceAsk(recentHistory as any, lastNameAskIndex(recentHistory as any));
 

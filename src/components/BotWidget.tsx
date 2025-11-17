@@ -117,7 +117,7 @@ export default function BotWidget({ botId }: { botId: string }) {
         announcedIframesRef.current.add(`fail:${src}`)
         return [
           ...updated,
-          { sender: 'bot', text: 'No problem — tap “Open Booking Page” to continue.' }
+          { sender: 'bot', text: 'No problem — tap "Open Booking Page" to continue.' }
         ]
       }
       return updated
@@ -175,7 +175,7 @@ export default function BotWidget({ botId }: { botId: string }) {
       <div className="relative mt-2 h-full">
         <button
           aria-label="Close calendar"
-          className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
+          className="absolute right-2 top-2 z-10 rounded-lg px-2 py-1 text-sm bg-white/95 shadow-md hover:bg-white transition-colors duration-150"
           onClick={() => {
             setVisibleCard(false)
             closedIframesRef.current.add(src)
@@ -190,7 +190,7 @@ export default function BotWidget({ botId }: { botId: string }) {
           width="100%"
           height="100%"
           className="w-full h-full block"
-          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', overflow: 'hidden' }}
+          style={{ border: 'none', marginTop: '10px', borderRadius: '12px', overflow: 'hidden' }}
           allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
           sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
@@ -248,7 +248,7 @@ export default function BotWidget({ botId }: { botId: string }) {
       <div className="relative mt-2 h-full">
         <button
           aria-label="Close calendar"
-          className="absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-sm bg-white/90 shadow hover:bg-white"
+          className="absolute right-2 top-2 z-10 rounded-lg px-2 py-1 text-sm bg-white/95 shadow-md hover:bg-white transition-colors duration-150"
           onClick={() => {
             setVisibleCard(false)
             closedIframesRef.current.add(src)
@@ -263,7 +263,7 @@ export default function BotWidget({ botId }: { botId: string }) {
           width="100%"
           height="100%"
           className="w-full h-full block"
-          style={{ border: 'none', marginTop: '10px', borderRadius: '8px', overflow: 'hidden' }}
+          style={{ border: 'none', marginTop: '10px', borderRadius: '12px', overflow: 'hidden' }}
           allow="payment; geolocation; microphone; camera; web-share; clipboard-write; fullscreen"
           sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
           onLoad={() => {
@@ -287,13 +287,13 @@ export default function BotWidget({ botId }: { botId: string }) {
     return (
       <button
         onClick={() => { setVisible(true); notifyParent('open') }}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center group z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center group z-50"
       >
-        <div className="w-12 h-12 rounded-full shadow-lg overflow-hidden border border-gray-300 bg-white">
+        <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-white shadow-lg">
           {logoUrl ? (
             <img src={logoUrl} alt="Bot Logo" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white text-xl">💬</div>
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg">💬</div>
           )}
         </div>
       </button>
@@ -304,43 +304,50 @@ export default function BotWidget({ botId }: { botId: string }) {
   // Inner card = the visible white panel.
   return (
     <div id={ROOT_ID} className="fixed inset-0 md:inset-auto md:bottom-6 md:right-6 z-50 flex items-end md:items-stretch justify-end bg-transparent pointer-events-none">
-      <div className="md:w-[350px] md:h-[500px] w-full h-full bg-white md:rounded-lg shadow-2xl flex flex-col pointer-events-auto">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white md:rounded-t-lg">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded-full shadow-lg overflow-hidden border border-gray-200 bg-white">
+      <div className="md:w-96 md:h-[540px] w-full h-full bg-white md:rounded-2xl shadow-2xl flex flex-col pointer-events-auto md:border md:border-slate-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white md:rounded-t-2xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 bg-white shadow-sm flex-shrink-0">
               {logoUrl ? (
                 <img src={logoUrl} alt="Bot Logo" className="w-full h-full object-cover" />
               ) : (
-                <div className="bg-blue-600 w-full h-full flex items-center justify-center text-white text-xl">💬</div>
+                <div className="bg-gradient-to-br from-blue-500 to-blue-700 w-full h-full flex items-center justify-center text-white text-sm">💬</div>
               )}
             </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">{botName}</h3>
-              <p className="text-xs text-green-600">● Online</p>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-sm text-slate-900 truncate">{botName}</h3>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                <p className="text-xs text-slate-500">Online</p>
+              </div>
             </div>
           </div>
-          <button
-            onClick={startNewConversation}
-            className="mr-2 px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
-            title="Start a new chat"
-          >
-            New chat
-          </button>
-          <button
-            onClick={() => { setVisible(false); notifyParent('close') }}
-            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors duration-150"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={startNewConversation}
+              className="px-2.5 py-1.5 text-xs font-medium text-slate-700 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors duration-150 whitespace-nowrap"
+              title="Start a new chat"
+            >
+              New chat
+            </button>
+            <button
+              onClick={() => { setVisible(false); notifyParent('close') }}
+              className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors duration-150 text-slate-500 hover:text-slate-700"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 text-sm text-gray-800 space-y-3 bg-white">
+        <div className="flex-1 overflow-y-auto p-4 text-sm text-slate-700 space-y-4 bg-slate-50">
           {messages.map((msg: any, idx: number) => {
             // ---- EMBED MODE (full-bleed, viewport-height) ----
             if (msg.iframe) {
               return (
                 <div key={idx} className="w-full">
-                  <div className="-mx-3 my-2">
+                  <div className="-mx-4 my-2">
                     <div className="relative bg-transparent border-0 shadow-none rounded-none">
                       <div
                         className="overflow-hidden pb-[env(safe-area-inset-bottom)]"
@@ -360,13 +367,15 @@ export default function BotWidget({ botId }: { botId: string }) {
 
             // ---- NORMAL BUBBLE MODE ----
             return (
-              <div key={idx} className={`flex gap-2 items-start ${msg.sender === 'bot' ? 'self-start' : 'self-end'}`}>
+              <div key={idx} className={`flex gap-3 items-end ${msg.sender === 'bot' ? 'justify-start' : 'justify-end'}`}>
                 {msg.sender === 'bot' && logoUrl && (
-                  <img src={logoUrl} alt="Bot Logo" className="w-8 h-8 rounded-full border border-gray-300 mt-1" />
+                  <img src={logoUrl} alt="Bot Logo" className="w-6 h-6 rounded-full border border-slate-200 flex-shrink-0" />
                 )}
                 <div
-                  className={`px-4 py-2 rounded-xl text-sm whitespace-pre-wrap max-w-[75%] ${
-                    msg.sender === 'bot' ? 'bg-gray-100 text-black' : 'bg-blue-600 text-white'
+                  className={`px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap max-w-xs lg:max-w-sm ${
+                    msg.sender === 'bot'
+                      ? 'bg-white text-slate-900 border border-slate-200 shadow-sm'
+                      : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md'
                   }`}
                 >
                   <div
@@ -375,7 +384,7 @@ export default function BotWidget({ botId }: { botId: string }) {
                         /(https?:\/\/[^\s<>"')\]]+)/g,
                         (rawUrl) => {
                           const cleanedUrl = rawUrl.replace(/[.)\],]+$/, '')
-                          return `<a href="${cleanedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${cleanedUrl}</a>`
+                          return `<a href="${cleanedUrl}" target="_blank" rel="noopener noreferrer" class="${msg.sender === 'bot' ? 'text-blue-600' : 'text-blue-100'} underline">${cleanedUrl}</a>`
                         }
                       ),
                     }}
@@ -391,7 +400,7 @@ export default function BotWidget({ botId }: { botId: string }) {
                   )}
 
                   {msg.link && (
-                    <a href={msg.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline block mt-2">
+                    <a href={msg.link} target="_blank" rel="noopener noreferrer" className={`${msg.sender === 'bot' ? 'text-blue-600' : 'text-blue-100'} underline block mt-2 text-xs font-medium`}>
                       Open Booking Page
                     </a>
                   )}
@@ -407,12 +416,16 @@ export default function BotWidget({ botId }: { botId: string }) {
 
                     if (items.length === 0) return null;
                     return (
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex flex-wrap gap-2 mt-3">
                         {items.map((it, i) => (
                           <button
                             key={`${it.id}-${i}`}
                             onClick={() => sendMessage(it.id, weekday)}  // <-- send ID, not label
-                            className="bg-gray-200 text-sm px-3 py-1 rounded-full hover:bg-gray-300"
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors duration-150 ${
+                              msg.sender === 'bot'
+                                ? 'bg-slate-200 text-slate-900 hover:bg-slate-300'
+                                : 'bg-white/20 text-white hover:bg-white/30'
+                            }`}
                             title={it.label}
                           >
                             {it.label}
@@ -427,12 +440,12 @@ export default function BotWidget({ botId }: { botId: string }) {
           })}
 
           {isTyping && (
-            <div className="flex gap-2 items-start">
-              {logoUrl && <img src={logoUrl} alt="Bot Logo" className="w-8 h-8 rounded-full border border-gray-300 mt-1" />}
-              <div className="px-4 py-2 bg-gray-100 rounded-xl text-sm max-w-[75%] flex gap-1 items-center">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:.1s]"></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:.2s]"></div>
+            <div className="flex gap-3 items-end">
+              {logoUrl && <img src={logoUrl} alt="Bot Logo" className="w-6 h-6 rounded-full border border-slate-200 flex-shrink-0" />}
+              <div className="px-4 py-2.5 bg-white text-slate-600 rounded-2xl text-sm max-w-xs flex gap-1.5 items-center border border-slate-200 shadow-sm">
+                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:.1s]"></div>
+                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:.2s]"></div>
               </div>
             </div>
           )}
@@ -440,7 +453,7 @@ export default function BotWidget({ botId }: { botId: string }) {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-3 border-t bg-white flex gap-2 relative z-[1]">
+        <div className="p-4 border-t border-slate-100 bg-white flex gap-2 relative z-[1]">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -452,11 +465,11 @@ export default function BotWidget({ botId }: { botId: string }) {
             }}
             placeholder="Type your message..."
             rows={1}
-            className="w-full resize-none overflow-hidden px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 max-h-40"
+            className="w-full resize-none overflow-hidden px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 max-h-40 text-sm"
           />
           <button
             onClick={() => sendMessage(undefined, weekday)}
-            className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-all duration-150 hover:scale-105"
+            className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl flex items-center justify-center transition-all duration-150 hover:scale-105 shadow-md flex-shrink-0"
             aria-label="Send message"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
